@@ -5,6 +5,12 @@ kneden
 
 **WARNING: kneden is a still a WIP and only a very small subset of what it promises (pun intended) is implemented.**
 
+Requires the following PRs to be merged in dependencies to work:
+
+- https://github.com/nathan7/esmap/pull/1
+- https://github.com/nathan7/esmap/pull/2
+- https://github.com/nathan7/ast-hoist/pull/3
+
 Example
 -------
 
