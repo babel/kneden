@@ -13,7 +13,8 @@ exports.parse = function (code) {
     ecmaVersion: 7,
     ranges: true,
     onComment: comments,
-    onToken: tokens
+    onToken: tokens,
+    sourceType: 'module'
   });
   escodegen.attachComments(ast, comments, tokens);
 
@@ -21,10 +22,12 @@ exports.parse = function (code) {
 };
 
 exports.hoist = function (ast) {
-  ast = astHoist(ast, true);
   ast = estraverse.replace(ast, {
-    // FIXME: fix upstream in hoist?
     enter: function (node) {
+      if (exports.isFunc(node)) {
+        return astHoist(node, false);
+      }
+      // FIXME: fix upstream in ast-hoist?
       if (node.type === 'SequenceExpression' && !node.expressions.length) {
         this.remove();
       }
@@ -41,7 +44,8 @@ exports.hoist = function (ast) {
 exports.isFunc = function (node) {
   return [
     'FunctionDeclaration',
-    'FunctionExpression'
+    'FunctionExpression',
+    'ArrowFunctionExpression'
   ].indexOf(node.type) !== -1;
 };
 

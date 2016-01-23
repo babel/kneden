@@ -28,7 +28,7 @@
     "test": "npm run lint && npm run coverage",
     "fast-test": "node test/test.js",
     "coverage": "./node_modules/.bin/istanbul cover test/test.js && ./node_modules/.bin/istanbul check-coverage --statements 100 --functions 100 --branches 100 --lines 100",
-    "lint": "./node_modules/.bin/eslint *.js test/test.js && ./node_modules/.bin/eslint -c .eslintrc.tests.in.json test/*.in.js && ./node_modules/.bin/eslint -c .eslintrc.tests.out.json test/*.out.js"
+    "lint": "./node_modules/.bin/eslint *.js test/test.js && ./node_modules/.bin/eslint -c .eslintrc.tests.json test/*.in.js test/*.out.js"
   },
   "keywords": [
     "es7",

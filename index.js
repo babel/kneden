@@ -8,14 +8,21 @@ var estraverse = require('estraverse');
 var astutils = require('./astutils');
 
 module.exports = function compile(code) {
-  // parse & preprocess code
+  // parse
   var ast = astutils.parse(code);
+
+  // hoist all variable/function declarations up
   ast = astutils.hoist(ast);
 
   // transform async functions
   estraverse.traverse(ast, {
     enter: function (node) {
       if (astutils.isFunc(node) && node.async) {
+        if (node.type === 'ArrowFunctionExpression' && node.expression) {
+          // make it a non-expression arrow function for later processing
+          node.body = astutils.blockStatement([astutils.returnStatement(node.body)]);
+          node.expression = false;
+        }
         node.body = newFunctionBody(node);
         node.async = false;
       }
