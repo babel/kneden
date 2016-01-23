@@ -3,5 +3,5 @@ async function test() {
   if (a) {
     await db.destroy();
   }
-  1 + 1;
+  var b = 1 + 1;
 }

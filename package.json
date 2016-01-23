@@ -24,6 +24,7 @@
   },
   "scripts": {
     "test": "npm run lint && npm run coverage",
+    "fast-test": "node test/test.js",
     "coverage": "./node_modules/.bin/istanbul cover test/test.js",
     "lint": "./node_modules/.bin/eslint *.js && ./node_modules/.bin/eslint -c .eslintrc.tests.in.json test/*.in.js && ./node_modules/.bin/eslint -c .eslintrc.tests.out.json test/*.out.js"
   },

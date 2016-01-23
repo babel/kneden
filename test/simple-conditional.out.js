@@ -4,7 +4,6 @@ function test() {
     return db.post({});
   }).then(function (pResp) {
     a = pResp;
-
     if (a) {
       return Promise.resolve().then(function () {
         return db.destroy();

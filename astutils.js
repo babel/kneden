@@ -96,6 +96,19 @@ exports.returnStatement = function (argument) {
   };
 };
 
+exports.containsAwait = function (node) {
+  var found = false;
+  estraverse.traverse(node, {
+    enter: function (subNode) {
+      if (subNode.type === 'AwaitExpression') {
+        found = true;
+        this.break();
+      }
+    }
+  });
+  return found;
+}
+
 exports.generate = function (ast) {
   return escodegen.generate(ast, {
     format: {indent: {style: '  '}},
