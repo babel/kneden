@@ -19,14 +19,16 @@
   },
   "devDependencies": {
     "babel-eslint": "^4.1.6",
+    "colors": "^1.1.2",
+    "diff": "^2.2.1",
     "eslint": "^1.10.3",
     "istanbul": "^0.4.2"
   },
   "scripts": {
     "test": "npm run lint && npm run coverage",
     "fast-test": "node test/test.js",
-    "coverage": "./node_modules/.bin/istanbul cover test/test.js",
-    "lint": "./node_modules/.bin/eslint *.js && ./node_modules/.bin/eslint -c .eslintrc.tests.in.json test/*.in.js && ./node_modules/.bin/eslint -c .eslintrc.tests.out.json test/*.out.js"
+    "coverage": "./node_modules/.bin/istanbul cover test/test.js && ./node_modules/.bin/istanbul check-coverage --statements 100 --functions 100 --branches 100 --lines 100",
+    "lint": "./node_modules/.bin/eslint *.js test/test.js && ./node_modules/.bin/eslint -c .eslintrc.tests.in.json test/*.in.js && ./node_modules/.bin/eslint -c .eslintrc.tests.out.json test/*.out.js"
   },
   "keywords": [
     "es7",

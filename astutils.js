@@ -64,7 +64,10 @@ exports.identifier = function (name) {
   };
 };
 
-exports.chainCall = function (base, name, params, body) {
+exports.chainCall = function (base, name, args) {
+  var argsAst = args.map(function (arg) {
+    return functionExpression(arg[0] ? [exports.identifier(arg[0])] : [], arg[1]);
+  });
   return {
     type: 'CallExpression',
     callee: {
@@ -72,15 +75,17 @@ exports.chainCall = function (base, name, params, body) {
       object: base,
       property: exports.identifier(name)
     },
-    arguments: [
-      {
-        type: 'FunctionExpression',
-        params: params,
-        body: exports.blockStatement(body)
-      }
-    ]
+    arguments: argsAst
   };
 };
+
+function functionExpression(params, body) {
+  return {
+    type: 'FunctionExpression',
+    params: params,
+    body: exports.blockStatement(body)
+  };
+}
 
 exports.blockStatement = function (body) {
   return {
@@ -107,7 +112,14 @@ exports.containsAwait = function (node) {
     }
   });
   return found;
-}
+};
+
+exports.throwStatement = function (argument) {
+  return {
+    type: 'ThrowStatement',
+    argument: argument
+  };
+};
 
 exports.generate = function (ast) {
   return escodegen.generate(ast, {

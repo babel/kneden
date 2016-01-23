@@ -1,13 +1,11 @@
 // Keep in mind-list:
 // - eval? Probably impossible to support, but should at least throw error (escope for detection?)
 // - arguments: save in a temporary variable if used? Same for 'this'...
-// - all the main control structures (if/else, switch, for, do while, while, a ? b : c, a || b, return, break, continue, try/catch etc.)
+// - all the main control structures (switch, for, do while, while, a ? b : c, a || b, return, break, continue etc.)
 //   - most of these can probably be implemented using conversion to just try/catch, if/else and (semi-)recursion
 
 var estraverse = require('estraverse');
 var astutils = require('./astutils');
-
-var RESULT_NAME = 'pResp';
 
 module.exports = function compile(code) {
   // parse & preprocess code
@@ -50,6 +48,12 @@ function newBody(oldBody, resolveStrict) {
   if (!oldBody) {
     return null;
   }
+  var chain = bodyToChain(oldBody, resolveStrict);
+  // wrap the body so it fits in the AST
+  return astutils.blockStatement([astutils.returnStatement(chain.ast)]);
+}
+
+function bodyToChain(oldBody, resolveStrict) {
   // start chain
   var chain = new PromiseChain();
   var nextInfo = new NextLinkInfo();
@@ -60,24 +64,19 @@ function newBody(oldBody, resolveStrict) {
     });
     if (resolveStrict || nextInfo.body.length) {
       // add the remainder as a last item to the chain
-      chain.add(nextInfo.type, nextInfo.body);
+      chain.add(nextInfo.type, [[nextInfo.argName, nextInfo.body]]);
     }
   }
 
-  // wrap the body so it fits in the AST
-  return astutils.blockStatement([astutils.returnStatement(chain.ast)]);
+  return chain;
 }
 
 function PromiseChain() {
   this.ast = astutils.resolveBase();
 }
 
-PromiseChain.prototype.add = function (type, body) {
-  var params = {
-    then: [],
-    thenWithArgs: [astutils.identifier(RESULT_NAME)]
-  };
-  this.ast = astutils.chainCall(this.ast, 'then', params[type], body);
+PromiseChain.prototype.add = function (type, args) {
+  this.ast = astutils.chainCall(this.ast, type, args);
 }
 
 function NextLinkInfo() {
@@ -89,6 +88,7 @@ function NextLinkInfo() {
 NextLinkInfo.prototype.reset = function () {
   this.type = 'then';
   this.body = [];
+  this.argName = null;
 }
 
 function processStatement(chain, nextInfo, node) {
@@ -105,20 +105,47 @@ function processStatement(chain, nextInfo, node) {
         subNode.consequent = newBody(subNode.consequent, false);
         subNode.alternate = newBody(subNode.alternate, false);
         nextInfo.body.push(subNode);
-        chain.add(nextInfo.type, nextInfo.body);
+        chain.add(nextInfo.type, [[nextInfo.argName, nextInfo.body]]);
         nextInfo.reset();
+        this.remove();
+      }
+      if (subNode.type === 'TryStatement' && astutils.containsAwait(subNode)) {
+        // starts a subchain that consists of the try 'block'
+        var subChain = bodyToChain(subNode.block);
+        // add the catch handler at the end (if one)
+        if (subNode.handler) {
+          var catchBody = newBody(subNode.handler.body).body;
+          subChain.add('catch', [[subNode.handler.param.name, catchBody]]);
+        }
+        // add the finally handler at the end (if one)
+        if (subNode.finalizer) {
+          var finalizerChain = bodyToChain(subNode.finalizer);
+          var finalizerBody = [astutils.returnStatement(finalizerChain.ast)];
+          var throwBody = [astutils.throwStatement(astutils.identifier('pErr'))];
+          finalizerChain.add('then', [[null, throwBody]]);
+          var errFinalizerBody = [astutils.returnStatement(finalizerChain.ast)];
+          subChain.add('then', [[null, finalizerBody], ['pErr', errFinalizerBody]]);
+        }
+
+        // add the subchain to the main chain
+        nextInfo.body.push(astutils.returnStatement(subChain.ast));
+        chain.add(nextInfo.type, [[nextInfo.argName, nextInfo.body]]);
+        nextInfo.reset();
+
+        // the original try/catch can be removed
         this.remove();
       }
       if (subNode.type === 'AwaitExpression') {
         nextInfo.body.push(astutils.returnStatement(subNode.argument));
-        chain.add(nextInfo.type, nextInfo.body);
+        chain.add(nextInfo.type, [[nextInfo.argName, nextInfo.body]]);
         nextInfo.reset();
         // FIXME: handle indirect parents. This is a non-thought out hack...
         if (parent.type === 'ExpressionStatement') {
           this.remove();
         } else {
-          nextInfo.type = 'thenWithArgs';
-          return astutils.identifier(RESULT_NAME);
+          nextInfo.type = 'then';
+          nextInfo.argName = 'pResp';
+          return astutils.identifier('pResp');
         }
       }
     },

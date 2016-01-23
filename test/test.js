@@ -1,5 +1,7 @@
 var fs = require('fs');
 var path = require('path');
+var diff = require('diff');
+require('colors');
 var compile = require('../index.js');
 
 var items;
@@ -25,9 +27,11 @@ items.forEach(function (inName) {
     if (expected === result) {
       passes++;
     } else {
-      console.log(expected);
-      console.log(result);
+      diff.diffLines(expected, result).forEach(function (part) {
+        var color = part.added ? 'green' : (part.removed ? 'red' : 'white');
+        process.stderr.write(part.value[color]);
+      });
     }
   }
 });
-console.log(passes + '/' + total);
+process.stderr.write(passes + ' out of ' + total + ' tests passed\n');
