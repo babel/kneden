@@ -4,7 +4,7 @@ async function test() {
     var b = new PouchDB('test2');
     var c = await db.destroy();
   } catch (err) {
-    var d = new PouchDB('test').destroy();
+    var d = await new PouchDB('test').destroy();
   }
   var e = await b();
 

@@ -6,25 +6,36 @@
 
 var estraverse = require('estraverse');
 var astutils = require('./astutils');
+var hoist = require('ast-hoist');
 
 module.exports = function compile(code) {
   // parse
   var ast = astutils.parse(code);
 
-  // hoist all variable/function declarations up
-  ast = astutils.hoist(ast);
-
   // transform async functions
-  estraverse.traverse(ast, {
+  ast = estraverse.replace(ast, {
     enter: function (node) {
       if (astutils.isFunc(node) && node.async) {
-        if (node.type === 'ArrowFunctionExpression' && node.expression) {
-          // make it a non-expression arrow function for later processing
-          node.body = astutils.blockStatement([astutils.returnStatement(node.body)]);
-          node.expression = false;
-        }
-        node.body = newFunctionBody(node);
+        node = astutils.blockify(node);
+        // convert loops to recursive functions & if statements
+        node.body = astutils.recursifyAwaitingLoops(node.body);
+        node.body = astutils.singleExitPoint(node.body);
+        // hoist all variable/function declarations up
+        node = hoist(node, false);
+
+        node.body = newFunctionBody(node.body);
         node.async = false;
+        return node;
+      }
+      // FIXME: fix upstream in ast-hoist?
+      if (node.type === 'SequenceExpression' && !node.expressions.length) {
+        this.remove();
+      }
+    },
+    leave: function (node) {
+      // also for ast-hoist
+      if (node.type === 'ExpressionStatement' && !node.expression) {
+        this.remove();
       }
     }
   });
@@ -33,10 +44,9 @@ module.exports = function compile(code) {
   return astutils.generate(ast);
 };
 
-function newFunctionBody(func) {
+function newFunctionBody(oldBody) {
   // replace body by moving it into a return Promise.resolve().then(...)
   // .then(...) chain.
-  var oldBody = func.body;
   var bodyBegin = [];
 
   while (['VariableDeclaration', 'FunctionDeclaration'].indexOf((oldBody.body[0] || {}).type) !== -1) {
@@ -108,10 +118,10 @@ function processStatement(chain, nextInfo, node) {
         // don't interfere with other functions - they're handled separately.
         this.skip();
       }
-      if (subNode.type === 'IfStatement' && astutils.containsAwait(subNode)) {
+      if (subNode.type === 'IfStatement' && (astutils.containsAwait(subNode.consequent) || astutils.containsAwait(subNode.alternate))) {
         subNode.consequent = newBody(subNode.consequent, false);
         subNode.alternate = newBody(subNode.alternate, false);
-        nextInfo.body.push(subNode);
+        processStatement(chain, nextInfo, subNode);
         chain.add(nextInfo.type, [[nextInfo.argName, nextInfo.body]]);
         nextInfo.reset();
         this.remove();

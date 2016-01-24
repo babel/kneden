@@ -1,7 +1,6 @@
 var acorn = require('acorn');
 require('acorn-es7-plugin')(acorn);
 
-var astHoist = require('ast-hoist');
 var estraverse = require('estraverse');
 var escodegen = require('escodegen');
 
@@ -18,26 +17,6 @@ exports.parse = function (code) {
   });
   escodegen.attachComments(ast, comments, tokens);
 
-  return ast;
-};
-
-exports.hoist = function (ast) {
-  ast = estraverse.replace(ast, {
-    enter: function (node) {
-      if (exports.isFunc(node)) {
-        return astHoist(node, false);
-      }
-      // FIXME: fix upstream in ast-hoist?
-      if (node.type === 'SequenceExpression' && !node.expressions.length) {
-        this.remove();
-      }
-    },
-    leave: function (node) {
-      if (node.type === 'ExpressionStatement' && !node.expression) {
-        this.remove();
-      }
-    }
-  });
   return ast;
 };
 
@@ -101,21 +80,14 @@ exports.blockStatement = function (body) {
 exports.returnStatement = function (argument) {
   return {
     type: 'ReturnStatement',
-    argument: argument
+    argument: argument || null
   };
 };
 
 exports.containsAwait = function (node) {
-  var found = false;
-  estraverse.traverse(node, {
-    enter: function (subNode) {
-      if (subNode.type === 'AwaitExpression') {
-        found = true;
-        this.break();
-      }
-    }
+  return contains(node, function (subNode) {
+    return subNode.type === 'AwaitExpression';
   });
-  return found;
 };
 
 exports.throwStatement = function (argument) {
@@ -124,6 +96,137 @@ exports.throwStatement = function (argument) {
     argument: argument
   };
 };
+
+exports.blockify = function (node) {
+  if (node.type === 'ArrowFunctionExpression' && node.expression) {
+    // make it a non-expression arrow function for later processing
+    node.body = exports.blockStatement([exports.returnStatement(node.body)]);
+    node.expression = false;
+  }
+  return node;
+  // TODO: same for if & loops
+}
+
+function isLoop(node) {
+  return [
+    'WhileStatement',
+    'DoWhileStatement',
+    'ForStatement',
+    'ForInStatement'
+  ].indexOf(node.type) !== -1;
+}
+
+exports.recursifyAwaitingLoops = function (body) {
+  // convert loops to recursion
+  return estraverse.replace(body, {
+    enter: function (node) {
+      if (isLoop(node) && exports.containsAwait(node)) {
+        node.body.body.push({type: 'ContinueStatement'});
+        var newBody = estraverse.replace(node.body, {
+          enter: function (subNode) {
+            if (subNode.type === 'BreakStatement') {
+              return exports.returnStatement();
+            }
+            if (subNode.type === 'ContinueStatement') {
+              return exports.blockStatement([
+                {
+                  type: 'ExpressionStatement',
+                  expression: {
+                    type: 'AwaitExpression',
+                    argument: {
+                      type: 'CallExpression',
+                      callee: exports.identifier('pRecursive'),
+                      arguments: []
+                    }
+                  }
+                },
+                exports.returnStatement()
+              ]);
+            }
+            if (exports.isFunc(node)) {
+              this.skip();
+            }
+          }
+        });
+        if (node.type === 'WhileStatement') {
+          return exports.returnStatement({
+            type: 'CallExpression',
+            callee: {
+              type: 'FunctionExpression',
+              id: exports.identifier('pRecursive'),
+              params: [],
+              body: exports.blockStatement([
+                {
+                  type: 'IfStatement',
+                  test: node.test,
+                  consequent: newBody
+                }
+              ]),
+              async: true
+            },
+            arguments: []
+          });
+        }
+      }
+      if (exports.isFunc(node)) {
+        this.skip();
+      }
+    },
+    leave: function(node) {
+      // flatten block statements
+      if (node.type === 'BlockStatement') {
+        for (var i = 0; i < node.body.length; i++) {
+          var subNode = node.body[i];
+          if (subNode.type === 'BlockStatement') {
+            node.body.splice.apply(node.body, [i, 1].concat(subNode.body))
+            // -2: one for the next iteration, one for the removed block
+            // statement
+            i += subNode.body.length - 2;
+          }
+        }
+      }
+    }
+  });
+}
+
+exports.singleExitPoint = function (body) {
+/*  return estraverse.replace(body, {
+    enter: function (node) {
+      for (var i = 0; i < node.body.length; i++) {
+        var subNode = node.body[i];
+        if (subNode.type === 'IfStatement' && containsReturn(subNode)) {
+        }
+      }
+    }
+  });*/
+  return body;
+}
+
+function contains(node, check) {
+  var found = false;
+  estraverse.traverse(node, {
+    enter: function (subNode) {
+      if (check(subNode)) {
+        found = true;
+        this.break();
+      }
+      if (exports.isFunc(subNode)) {
+        this.skip();
+      }
+    }
+  });
+  return found;
+}
+
+//function containsReturn(node) {
+//  return contains(node, function (subNode) {
+//    return subNode.type === 'ReturnStatement';
+//  })
+//}
+
+exports.flattenIfs = function () {
+
+}
 
 exports.generate = function (ast) {
   return escodegen.generate(ast, {

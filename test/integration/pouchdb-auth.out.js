@@ -29,8 +29,7 @@ function shouldNotBeLoggedIn(session) {
   session.ok.should.be.ok;
 }
 function shouldBeSuccesfulLogIn(data, roles) {
-  var copy;
-  copy = extend({}, data);
+  var copy = extend({}, data);
   // irrelevant
   delete copy.sessionID;
   copy.should.eql({

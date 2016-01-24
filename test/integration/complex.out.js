@@ -1,11 +1,9 @@
 function test() {
   var a, b, c, d, e;
-
   return Promise.resolve().then(function () {
     return a();
   }).then(function (pResp) {
     a = pResp;
-  }).then(function () {
     return Promise.resolve().then(function () {
       b = new PouchDB('test2');
       return db.destroy();
@@ -20,9 +18,8 @@ function test() {
     });
   }).then(function () {
     return b();
-  }).then(function(pResp) {
+  }).then(function (pResp) {
     e = pResp;
-
     return a + b + c + d + e + 2;
   });
 }

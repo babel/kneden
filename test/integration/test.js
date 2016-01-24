@@ -2,7 +2,7 @@ var fs = require('fs');
 var path = require('path');
 var diff = require('diff');
 require('colors');
-var compile = require('../index.js');
+var compile = require('../..');
 
 var items;
 var args = process.argv.slice(2);
@@ -29,6 +29,9 @@ items.forEach(function (inName) {
     } else {
       diff.diffLines(expected, result).forEach(function (part) {
         var color = part.added ? 'green' : (part.removed ? 'red' : 'white');
+        if (!part.value.trim().length) {
+          part.value = part.value.replace(/\n/g, '⏎\n');
+        }
         process.stderr.write(part.value[color]);
       });
     }
