@@ -9,7 +9,7 @@ var astutils = require('./astutils');
 var hoist = require('ast-hoist');
 
 module.exports = function compile(code) {
-  // parse
+  // parse code
   var ast = astutils.parse(code);
 
   // transform async functions

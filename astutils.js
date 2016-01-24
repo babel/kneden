@@ -85,7 +85,7 @@ exports.returnStatement = function (argument) {
 };
 
 exports.containsAwait = function (node) {
-  return contains(node, function (subNode) {
+  return matches(node, function (subNode) {
     return subNode.type === 'AwaitExpression';
   });
 };
@@ -172,37 +172,63 @@ exports.recursifyAwaitingLoops = function (body) {
         this.skip();
       }
     },
-    leave: function(node) {
-      // flatten block statements
-      if (node.type === 'BlockStatement') {
-        for (var i = 0; i < node.body.length; i++) {
-          var subNode = node.body[i];
-          if (subNode.type === 'BlockStatement') {
-            node.body.splice.apply(node.body, [i, 1].concat(subNode.body))
-            // -2: one for the next iteration, one for the removed block
-            // statement
-            i += subNode.body.length - 2;
-          }
-        }
-      }
-    }
+    leave: squashBlockStatements
   });
 }
 
-exports.singleExitPoint = function (body) {
-/*  return estraverse.replace(body, {
-    enter: function (node) {
-      for (var i = 0; i < node.body.length; i++) {
-        var subNode = node.body[i];
-        if (subNode.type === 'IfStatement' && containsReturn(subNode)) {
-        }
+function squashBlockStatements(node) {
+  // flatten block statements
+  if (node.type === 'BlockStatement') {
+    for (var i = 0; i < node.body.length; i++) {
+      var subNode = node.body[i];
+      if (subNode.type === 'BlockStatement') {
+        node.body.splice.apply(node.body, [i, 1].concat(subNode.body))
+        // -2: one for the next iteration, one for the removed block
+        // statement
+        i += subNode.body.length - 2;
       }
     }
-  });*/
-  return body;
+  }
 }
 
-function contains(node, check) {
+exports.singleExitPoint = function (block) {
+  // guarantee that if there is a return, it's directly in the body *or* in a
+  // single-layer if statement.
+  block = exports.flattenReturningIfs(block);
+
+  stripAfterReturn(block.body);
+  elseOnReturn(block.body);
+
+  return block;
+}
+
+function stripAfterReturn(body) {
+  // returns if a return statement was found
+  for (var i = 0; i < body.length; i++) {
+    var node = body[i];
+    if (node.type === 'ReturnStatement') {
+      body.splice(i + 1);
+      return true;
+    }
+  }
+  return false;
+}
+
+function elseOnReturn(body) {
+  for (var i = 0; i < body.length; i++) {
+    var node = body[i];
+    if (node.type === 'IfStatement') {
+      var foundReturn = stripAfterReturn(node.consequent);
+      if (foundReturn) {
+        var elseBody = body.splice(i + 1);
+        node.alternate = exports.blockStatement(((node.alternate || {}).body || []).concat(elseBody));
+        return elseOnReturn(node.alternate.body);
+      }
+    }
+  }
+}
+
+function matches(node, check) {
   var found = false;
   estraverse.traverse(node, {
     enter: function (subNode) {
@@ -218,14 +244,72 @@ function contains(node, check) {
   return found;
 }
 
-//function containsReturn(node) {
-//  return contains(node, function (subNode) {
-//    return subNode.type === 'ReturnStatement';
-//  })
-//}
+function containsReturn(node) {
+  return matches(node, function (subNode) {
+    return subNode.type === 'ReturnStatement';
+  });
+}
 
-exports.flattenIfs = function () {
+function shouldBeFlattened(node) {
+  return matches(node, function (subNode) {
+    return node !== subNode && node.type === 'IfStatement' && subNode.type === 'IfStatement' && containsReturn(subNode);
+  });
+}
 
+exports.flattenReturningIfs = function (block) {
+  var flattenedCount = 0;
+  return estraverse.replace(block, {
+    enter: function (node) {
+      if (shouldBeFlattened(node)) {
+        var statements = [{
+          type: 'VariableDeclaration',
+          kind: 'var',
+          declarations: [
+            {
+              type: 'VariableDeclarator',
+              id: exports.identifier('pCond' + ++flattenedCount),
+              init: node.test
+            }
+          ]
+        }];
+        var stillToAdd = [];
+        var add = function () {
+          if (stillToAdd.length) {
+            statements.push({
+              type: 'IfStatement',
+              test: exports.identifier('pCond' + flattenedCount),
+              consequent: exports.blockStatement(stillToAdd)
+            });
+            stillToAdd = [];
+          }
+        }
+        node.consequent.body.forEach(function (subNode) {
+          if (subNode.type === 'IfStatement' && containsReturn(subNode)) {
+            add();
+            subNode.test = {
+              type: 'BinaryExpression',
+              operator: '&&',
+              left: exports.identifier('pCond' + flattenedCount),
+              right: subNode.test
+            };
+            if (subNode.alternate) {
+              subNode.alternate = {
+                type: 'IfStatement',
+                test: exports.identifier('pCond' + flattenedCount),
+                consequent: subNode.alternate
+              };
+            }
+            statements.push(subNode);
+          } else {
+            stillToAdd.push(subNode);
+          }
+        });
+        add();
+        return exports.blockStatement(statements);
+      }
+    },
+    leave: squashBlockStatements
+  });
 }
 
 exports.generate = function (ast) {

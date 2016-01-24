@@ -12,22 +12,23 @@ async function test() {
   }
 }
 
-//TODO: break? continue?
 /*
 async function test() {
   var i = 0;
-  return (async function pRecursive {
-    var result = undefined;
+  return async function pRecursive() {
     if (i < 10) {
       i++;
       if ((await db.put({_id: i})).ok) {
-        result = pRecursive();
-      } else if (i !== 2) {
-        var a = await db.destroy();
         await pRecursive();
+        return;
       }
+      if (i === 2) {
+        return;
+      }
+      var a = await db.destroy();
+      await pRecursive();
+      return;
     }
-    return result;
-  })();
+  }();
 }
 */
