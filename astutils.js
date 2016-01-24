@@ -1,3 +1,10 @@
+// TODO: migrate to https://github.com/benjamn/recast ? Better preservation of
+// whitespace etc. would be nice to have. Last try didn't work out though
+// (async/await trouble).
+
+// TODO: refactor annihilateReturns(), flattenReturningIfs() &
+// recursifyAwaitingLoops
+
 var acorn = require('acorn');
 require('acorn-es7-plugin')(acorn);
 
@@ -29,6 +36,7 @@ exports.isFunc = function (node) {
 };
 
 exports.resolveBase = function () {
+  // AST-ish for ``Promise.resolve()``
   return {
     type: 'CallExpression',
     callee: {
@@ -48,6 +56,11 @@ exports.identifier = function (name) {
 };
 
 exports.chainCall = function (base, name, args) {
+  // AST-ish for (base.then(function (argName) {argBody})) where:
+  // - base is 'base'
+  // - 'then' or 'catch' is specified by 'name'
+  // - args is an array of [argName, argBody] arrays. It's an array so it can be
+  //   used for the (...).then(function (resp) {}, function (err) {}) form.
   var argsAst = args.map(function (arg) {
     return functionExpression(arg[0] ? [exports.identifier(arg[0])] : [], arg[1]);
   });
@@ -85,10 +98,27 @@ exports.returnStatement = function (argument) {
 };
 
 exports.containsAwait = function (node) {
+  // does node have a descendant that's an AwaitExpression?
   return matches(node, function (subNode) {
     return subNode.type === 'AwaitExpression';
   });
 };
+
+function matches(node, check) {
+  var found = false;
+  estraverse.traverse(node, {
+    enter: function (subNode) {
+      if (check(subNode)) {
+        found = true;
+        this.break();
+      }
+      if (exports.isFunc(subNode)) {
+        this.skip();
+      }
+    }
+  });
+  return found;
+}
 
 exports.throwStatement = function (argument) {
   return {
@@ -104,7 +134,7 @@ exports.blockify = function (node) {
     node.expression = false;
   }
   return node;
-  // TODO: same for if & loops
+  // TODO: same for if & loops if necessary - TEST!
 }
 
 function isLoop(node) {
@@ -117,7 +147,8 @@ function isLoop(node) {
 }
 
 exports.recursifyAwaitingLoops = function (body) {
-  // convert loops to recursion
+  // for every loop that contains await: convert from iterative statement to a
+  // recursive (async) function.
   return estraverse.replace(body, {
     enter: function (node) {
       if (isLoop(node) && exports.containsAwait(node)) {
@@ -197,60 +228,65 @@ exports.singleExitPoint = function (block) {
   block = exports.flattenReturningIfs(block);
 
   stripAfterReturn(block.body);
-  elseOnReturn(block.body);
+  annihilateReturns(block.body);
 
   return block;
 }
 
 function stripAfterReturn(body) {
-  // returns if a return statement was found
+  // returns the 'return' AST node (if one)
   for (var i = 0; i < body.length; i++) {
     var node = body[i];
     if (node.type === 'ReturnStatement') {
       body.splice(i + 1);
-      return true;
+      return node;
     }
   }
-  return false;
 }
 
-function elseOnReturn(body) {
+function annihilateReturns(body) {
   for (var i = 0; i < body.length; i++) {
     var node = body[i];
     if (node.type === 'IfStatement') {
-      var foundReturn = stripAfterReturn(node.consequent);
-      if (foundReturn) {
-        var elseBody = body.splice(i + 1);
-        node.alternate = exports.blockStatement(((node.alternate || {}).body || []).concat(elseBody));
-        return elseOnReturn(node.alternate.body);
+      var retNode = stripAfterReturn(node.consequent.body);
+      if (retNode) {
+        if (retNode.argument) {
+          // TODO
+        } else {
+          // remove return statement
+          node.consequent.body.splice(-1);
+        }
+        var existingElseBody = (node.alternate || {}).body || [];
+        var elseBody = existingElseBody.concat(body.splice(i + 1));
+        if (elseBody.length) {
+          node.alternate = exports.blockStatement(elseBody);
+          annihilateReturns(node.alternate.body);
+        }
+
+        if (!node.consequent.body.length) {
+          node.consequent = node.alternate;
+          node.alternate = null;
+          node.test = {
+            type: 'UnaryExpression',
+            operator: '!',
+            argument: node.test
+          }
+        }
       }
     }
   }
 }
 
-function matches(node, check) {
-  var found = false;
-  estraverse.traverse(node, {
-    enter: function (subNode) {
-      if (check(subNode)) {
-        found = true;
-        this.break();
-      }
-      if (exports.isFunc(subNode)) {
-        this.skip();
-      }
-    }
-  });
-  return found;
-}
-
 function containsReturn(node) {
+  // does node have a descendant that's a ReturnStatement?
   return matches(node, function (subNode) {
     return subNode.type === 'ReturnStatement';
   });
 }
 
 function shouldBeFlattened(node) {
+  // Does ``node`` (IfStatement) have a descendant (IfStatement) that contains
+  // a return?
   return matches(node, function (subNode) {
     return node !== subNode && node.type === 'IfStatement' && subNode.type === 'IfStatement' && containsReturn(subNode);
   });

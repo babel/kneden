@@ -1,27 +1,28 @@
 var astutils = require('../../astutils');
 require('chai').should();
 
-it('should flatten ifs', () => {
-  astutils.generate(astutils.flattenReturningIfs(astutils.parse(`
-    function x() {
-      console.log(1);
-      if (i === 2) {
-        console.log(2);
-        if (j === 3) {
-          console.log(3);
-          return;
-        } else {
-          console.log(4);
+describe('flattening returning ifs', () => {
+  it('should flatten relevant ifs', () => {
+    astutils.generate(astutils.flattenReturningIfs(astutils.parse(`
+      function x() {
+        console.log(1);
+        if (i === 2) {
+          console.log(2);
+          if (j === 3) {
+            console.log(3);
+            return;
+          } else {
+            console.log(4);
+          }
+          console.log(5);
+          if (k === 4) {
+            console.log(6);
+          }
+          console.log(7);
         }
-        console.log(5);
-        if (k === 4) {
-          console.log(6);
-        }
-        console.log(7);
+        console.log(8);
       }
-      console.log(8);
-    }
-  `).body[0].body)).should.equal(`
+    `).body[0].body)).should.equal(`
 {
   console.log(1);
   var pCond1 = i === 2;
@@ -43,7 +44,8 @@ it('should flatten ifs', () => {
   }
   console.log(8);
 }
-    `.trim() + '\n')
+      `.trim() + '\n')
+  });
 });
 
 describe('single point of exit', () => {
@@ -79,7 +81,17 @@ describe('single point of exit', () => {
     `);
   });
 
-  it.skip('simple example', () => {
+  it('top level return', () => {
+    cmp(
+      `function x() {return 1; var x = 2 + 2; }`,
+      `
+{
+  return 1;
+}     `
+    )
+  });
+
+  it('simple example', () => {
     cmp(`
       function x() {
         if (i === 2) {
@@ -90,7 +102,7 @@ describe('single point of exit', () => {
     `, `
 {
   if (!(i === 2)) {
-    console.log(1)
+    console.log(1);
   }
 }
     `)

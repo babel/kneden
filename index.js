@@ -1,8 +1,9 @@
 // Keep in mind-list:
-// - eval? Probably impossible to support, but should at least throw error (escope for detection?)
-// - arguments: save in a temporary variable if used? Same for 'this'...
-// - all the main control structures (switch, for, do while, while, a ? b : c, a || b, return, break, continue etc.)
-//   - most of these can probably be implemented using conversion to just try/catch, if/else and (semi-)recursion
+// - all the main control structures (switch, for, do while, a ? b : c, a || b etc.)
+//   - most of these can probably be implemented using conversion to just try/catch, if/else and (semi-)recursion.
+// - eval? Probably impossible to support (unless the whole lib is shipped?),
+//   but the readme should include a warning.
+// - this/arguments: save in a temporary variable when used?
 
 var estraverse = require('estraverse');
 var astutils = require('./astutils');
@@ -16,15 +17,21 @@ module.exports = function compile(code) {
   ast = estraverse.replace(ast, {
     enter: function (node) {
       if (astutils.isFunc(node) && node.async) {
+        // preparation steps to make the actual conversion to a promise chain
+        // easier
         node = astutils.blockify(node);
-        // convert loops to recursive functions & if statements
+        // convert iterative loops to their recursive equivalent
         node.body = astutils.recursifyAwaitingLoops(node.body);
+        // make sure there's at most one return, and if so at the function end.
         node.body = astutils.singleExitPoint(node.body);
         // hoist all variable/function declarations up
         node = hoist(node, false);
 
+        // the actual conversion to a promise chain - the heart of kneden
         node.body = newFunctionBody(node.body);
+        // no awaits anymore
         node.async = false;
+
         return node;
       }
       // FIXME: fix upstream in ast-hoist?
@@ -33,7 +40,7 @@ module.exports = function compile(code) {
       }
     },
     leave: function (node) {
-      // also for ast-hoist
+      // FIXME: also one for ast-hoist?
       if (node.type === 'ExpressionStatement' && !node.expression) {
         this.remove();
       }
@@ -49,7 +56,7 @@ function newFunctionBody(oldBody) {
   // .then(...) chain.
   var bodyBegin = [];
 
-  while (['VariableDeclaration', 'FunctionDeclaration'].indexOf((oldBody.body[0] || {}).type) !== -1) {
+  while (isDeclaration((oldBody.body[0] || {}).type)) {
     // move hoisted variables (courtesy of ast-hoist) up into the wrapper
     // function, so variables don't suddenly become inaccessable.
     var decl = oldBody.body.shift();
@@ -61,8 +68,13 @@ function newFunctionBody(oldBody) {
   return result;
 }
 
+function isDeclaration(type) {
+  return ['VariableDeclaration', 'FunctionDeclaration'].indexOf(type) !== -1;
+}
+
 function newBody(oldBody, resolveStrict) {
   if (!oldBody) {
+    // e.g. for .alternate in if statements
     return null;
   }
   var chain = bodyToChain(oldBody, resolveStrict);
@@ -118,52 +130,13 @@ function processStatement(chain, nextInfo, node) {
         // don't interfere with other functions - they're handled separately.
         this.skip();
       }
-      if (subNode.type === 'IfStatement' && (astutils.containsAwait(subNode.consequent) || astutils.containsAwait(subNode.alternate))) {
-        subNode.consequent = newBody(subNode.consequent, false);
-        subNode.alternate = newBody(subNode.alternate, false);
-        processStatement(chain, nextInfo, subNode);
-        chain.add(nextInfo.type, [[nextInfo.argName, nextInfo.body]]);
-        nextInfo.reset();
-        this.remove();
-      }
-      if (subNode.type === 'TryStatement' && astutils.containsAwait(subNode)) {
-        // starts a subchain that consists of the try 'block'
-        var subChain = bodyToChain(subNode.block);
-        // add the catch handler at the end (if one)
-        if (subNode.handler) {
-          var catchBody = newBody(subNode.handler.body).body;
-          subChain.add('catch', [[subNode.handler.param.name, catchBody]]);
-        }
-        // add the finally handler at the end (if one)
-        if (subNode.finalizer) {
-          var finalizerChain = bodyToChain(subNode.finalizer);
-          var finalizerBody = [astutils.returnStatement(finalizerChain.ast)];
-          var throwBody = [astutils.throwStatement(astutils.identifier('pErr'))];
-          finalizerChain.add('then', [[null, throwBody]]);
-          var errFinalizerBody = [astutils.returnStatement(finalizerChain.ast)];
-          subChain.add('then', [[null, finalizerBody], ['pErr', errFinalizerBody]]);
-        }
-
-        // add the subchain to the main chain
-        nextInfo.body.push(astutils.returnStatement(subChain.ast));
-        chain.add(nextInfo.type, [[nextInfo.argName, nextInfo.body]]);
-        nextInfo.reset();
-
-        // the original try/catch can be removed
-        this.remove();
-      }
-      if (subNode.type === 'AwaitExpression') {
-        nextInfo.body.push(astutils.returnStatement(subNode.argument));
-        chain.add(nextInfo.type, [[nextInfo.argName, nextInfo.body]]);
-        nextInfo.reset();
-        // FIXME: handle indirect parents. This is a non-thought out hack...
-        if (parent.type === 'ExpressionStatement') {
-          this.remove();
-        } else {
-          nextInfo.type = 'then';
-          nextInfo.argName = 'pResp';
-          return astutils.identifier('pResp');
-        }
+      var handler = {
+        IfStatement: processIfStatement,
+        TryStatement: processTryStatement,
+        AwaitExpression: processAwaitExpression
+      }[subNode.type];
+      if (handler) {
+        return handler(chain, nextInfo, subNode, parent);
       }
     },
     leave: function (subNode) {
@@ -177,5 +150,67 @@ function processStatement(chain, nextInfo, node) {
     // only if the node still exists, add it to the statements that still need
     // to be added to the chain.
     nextInfo.body.push(node);
+  }
+}
+
+function processIfStatement(chain, nextInfo, subNode) {
+  if (astutils.containsAwait(subNode.consequent) || astutils.containsAwait(subNode.alternate)) {
+    // subchains inside both the if and else part of the statement
+    subNode.consequent = newBody(subNode.consequent, false);
+    subNode.alternate = newBody(subNode.alternate, false);
+    // add the if statement to the chain as the last item of this link
+    processStatement(chain, nextInfo, subNode);
+    // and add a new, empty link to the chain
+    chain.add(nextInfo.type, [[nextInfo.argName, nextInfo.body]]);
+    nextInfo.reset();
+    // a new if statement is already in the chain, no need for the old one
+    // anymore
+    return estraverse.VisitorOption.Remove;
+  }
+}
+
+function processTryStatement(chain, nextInfo, subNode) {
+  if (astutils.containsAwait(subNode)) {
+    // starts a subchain that consists of the try 'block'
+    var subChain = bodyToChain(subNode.block);
+    // add the catch handler at the end (if one)
+    if (subNode.handler) {
+      var catchBody = newBody(subNode.handler.body).body;
+      subChain.add('catch', [[subNode.handler.param.name, catchBody]]);
+    }
+    // add the finally handler at the end (if one)
+    if (subNode.finalizer) {
+      var finalizerChain = bodyToChain(subNode.finalizer);
+      var finalizerBody = [astutils.returnStatement(finalizerChain.ast)];
+      var throwBody = [astutils.throwStatement(astutils.identifier('pErr'))];
+      finalizerChain.add('then', [[null, throwBody]]);
+      var errFinalizerBody = [astutils.returnStatement(finalizerChain.ast)];
+      subChain.add('then', [[null, finalizerBody], ['pErr', errFinalizerBody]]);
+    }
+
+    // add the subchain to the main chain
+    nextInfo.body.push(astutils.returnStatement(subChain.ast));
+    chain.add(nextInfo.type, [[nextInfo.argName, nextInfo.body]]);
+    nextInfo.reset();
+
+    // the original try/catch can be removed
+    return estraverse.VisitorOption.Remove;
+  }
+}
+
+function processAwaitExpression(chain, nextInfo, subNode, parent) {
+  // 1: evaluate the argument as last statement in the curren link
+  nextInfo.body.push(astutils.returnStatement(subNode.argument));
+  chain.add(nextInfo.type, [[nextInfo.argName, nextInfo.body]]);
+  nextInfo.reset();
+  // 2: either:
+  if (parent.type === 'ExpressionStatement') {
+    // remove the result (if the result of the await is thrown away anyway)
+    return estraverse.VisitorOption.Remove;
+  } else {
+    // or make it accessable as a variable
+    nextInfo.type = 'then';
+    nextInfo.argName = 'pResp';
+    return astutils.identifier('pResp');
   }
 }
