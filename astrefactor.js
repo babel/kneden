@@ -9,8 +9,6 @@ exports.recursifyAwaitingLoops = function (body) {
       if (!(isLoop(node) && astutils.containsAwait(node))) {
         return astutils.skipSubFuncs(node);
       }
-      // a loop can be thought of as having a continue as a last statement
-      node.body.body.push({type: 'ContinueStatement'});
       var newBody = estraverse.replace(node.body, {
         // replace continue/break with their recursive equivalents
         enter: function (subNode) {
@@ -18,25 +16,18 @@ exports.recursifyAwaitingLoops = function (body) {
             return astutils.returnStatement();
           }
           if (subNode.type === 'ContinueStatement') {
-            return astutils.blockStatement([
-              awaitCallStatement(astutils.identifier('pRecursive'), []),
-              astutils.returnStatement()
-            ]);
+            return continueStatementEquiv();
           }
           return astutils.skipSubFuncs(node)
         }
       });
       // loop-specific stuff
-      // TODO: generalize other loop types into while loops instead? Is a mapping
-      // worth it here for 1-2, maybe 3 different loop types that aren't converted
-      // into a different loop type?
       var handler = {
+        DoWhileStatement: processDoWhileStatement,
         ForStatement: processForStatement,
         WhileStatement: processWhileStatement
       }[node.type];
-      if (handler) {
-        return handler(node, newBody);
-      }
+      return handler(node, newBody);
     },
     leave: squashBlockStatements
   });
@@ -58,8 +49,13 @@ function awaitCallStatement(callee, args) {
   })
 }
 
+function processDoWhileStatement(node, newBody) {
+  newBody.body.push(astutils.ifStatement(node.test, continueStatementEquiv()));
+  return awaitCallStatement(asyncRecursiveFunc(newBody.body), []);
+}
+
 function processForStatement(node, newBody) {
-  newBody.body.splice(-1, 0, astutils.expressionStatement(node.update));
+  newBody.body.push(astutils.expressionStatement(node.update));
   return astutils.blockStatement([
     astutils.expressionStatement(node.init),
     processWhileStatement(node, newBody)
@@ -69,9 +65,19 @@ function processForStatement(node, newBody) {
 function processWhileStatement(node, newBody) {
   // converts a while loop into a recursive (async) function with an if-guard
   // over the body.
+
+  // a while loop can be thought of as having a continue as a last statement
+  newBody.body.push(continueStatementEquiv());
   return awaitCallStatement(asyncRecursiveFunc([
     astutils.ifStatement(node.test, newBody)
   ]), []);
+}
+
+function continueStatementEquiv() {
+  return astutils.blockStatement([
+    awaitCallStatement(astutils.identifier('pRecursive'), []),
+    astutils.returnStatement()
+  ]);
 }
 
 function asyncRecursiveFunc(body) {

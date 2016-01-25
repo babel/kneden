@@ -1,5 +1,5 @@
 // Keep in mind-list:
-// - all the main control structures (switch, do while, a ? b : c, etc.)
+// - all the main control structures (switch, a ? b : c, for in, etc.)
 //   - most of these can probably be implemented using conversion to just try/catch, if/else and (semi-)recursion.
 // - eval? Probably impossible to support (unless the whole lib is shipped?),
 //   but the readme should include a warning.
