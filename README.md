@@ -1,9 +1,16 @@
 kneden
 ======
 
-> Compile ES7 async/await to vanilla ES6 Promise chains
+> Transpile ES7 async/await to vanilla ES6 Promise chains
 
 **WARNING: kneden is a still a WIP and only a very small subset of what it promises (pun intended) is implemented.**
+
+Do you want an ES7 async/await transpiler that:
+
+- produces readable code - even when generator functions are not available?
+- and doesn't come with a runtime your users have to download?
+
+Then look no further! Kneden can help you.
 
 Requires the following PRs to be merged in dependencies to work:
 
@@ -14,14 +21,14 @@ Requires the following PRs to be merged in dependencies to work:
 Example
 -------
 
+input:
 ```js
 async function test() {
   await db.destroy();
 }
 ```
 
-->
-
+output:
 ```js
 function test() {
   return Promise.resolve().then(function () {
@@ -35,7 +42,9 @@ function test() {
 doesn't actually resolve to anything so it's necessary to make a valid
 translation.)
 
-See for more examples the ``test`` directory.
+Kneden translates ES6 async/await to promises in a similar manner as a human
+would do. Loops are converted to recursive functions, and your code is modified
+to have a single function exit point.
 
 API
 ---
@@ -43,7 +52,7 @@ API
 ```js
 var compile = require('kneden');
 var resp = compile('async function () {}');
-console.log('resp'); // function () {return Promise.resolve(); }
+console.log(resp); // function () {return Promise.resolve(); }
 ```
 
 What's up with the name?

@@ -7,6 +7,7 @@
 
 var estraverse = require('estraverse');
 var astutils = require('./astutils');
+var astrefactor = require('./astrefactor');
 var hoist = require('ast-hoist');
 
 module.exports = function compile(code) {
@@ -21,14 +22,14 @@ module.exports = function compile(code) {
         // easier
         node = astutils.blockify(node);
         // convert iterative loops to their recursive equivalent
-        node.body = astutils.recursifyAwaitingLoops(node.body);
+        node.body = astrefactor.recursifyAwaitingLoops(node.body);
         // make sure there's at most one return, and if so at the function end.
-        node.body = astutils.singleExitPoint(node.body);
+        node.body = astrefactor.singleExitPoint(node.body);
         // hoist all variable/function declarations up
         node = hoist(node, false);
 
         // the actual conversion to a promise chain - the heart of kneden
-        node.body = newFunctionBody(node.body);
+        node = newFunctionBody(node);
         // no awaits anymore
         node.async = false;
 
@@ -39,21 +40,25 @@ module.exports = function compile(code) {
         this.remove();
       }
     },
-    leave: function (node) {
-      // FIXME: also one for ast-hoist?
-      if (node.type === 'ExpressionStatement' && !node.expression) {
-        this.remove();
-      }
-    }
+    // FIXME: also one for ast-hoist?
+    leave: removeEmptyExprStmt
   });
 
   // convert back to code
   return astutils.generate(ast);
 };
 
-function newFunctionBody(oldBody) {
+function removeEmptyExprStmt(node) {
+    // fix AST after removing expressions
+    if (node.type === 'ExpressionStatement' && !node.expression) {
+      this.remove();
+    }
+}
+
+function newFunctionBody(func) {
   // replace body by moving it into a return Promise.resolve().then(...)
   // .then(...) chain.
+  var oldBody = func.body;
   var bodyBegin = [];
 
   while (isDeclaration((oldBody.body[0] || {}).type)) {
@@ -63,9 +68,11 @@ function newFunctionBody(oldBody) {
     bodyBegin.push(decl);
   }
 
-  var result = newBody(oldBody, true);
-  result.body = bodyBegin.concat(result.body);
-  return result;
+  var shinyNewBody = newBody(oldBody, !func.resolveLoose);
+  shinyNewBody.body = bodyBegin.concat(shinyNewBody.body);
+
+  func.body = shinyNewBody;
+  return func;
 }
 
 function isDeclaration(type) {
@@ -126,30 +133,40 @@ function processStatement(chain, nextInfo, node) {
   // needed and passed in.
   node = estraverse.replace(node, {
     enter: function (subNode, parent) {
-      if (astutils.isFunc(subNode)) {
-        // don't interfere with other functions - they're handled separately.
-        this.skip();
-      }
       var handler = {
+        AwaitExpression: processAwaitExpression,
         IfStatement: processIfStatement,
-        TryStatement: processTryStatement,
-        AwaitExpression: processAwaitExpression
+        LogicalExpression: processLogicalExpression,
+        TryStatement: processTryStatement
       }[subNode.type];
       if (handler) {
         return handler(chain, nextInfo, subNode, parent);
       }
+      return astutils.skipSubFuncs(subNode);
     },
-    leave: function (subNode) {
-      // fix AST after removing standalone await expressions
-      if (subNode.type === 'ExpressionStatement' && !subNode.expression) {
-        this.remove();
-      }
-    }
+    leave: removeEmptyExprStmt
   });
   if (node) {
     // only if the node still exists, add it to the statements that still need
     // to be added to the chain.
     nextInfo.body.push(node);
+  }
+}
+
+function processAwaitExpression(chain, nextInfo, subNode, parent) {
+  // 1: evaluate the argument as last statement in the curren link
+  nextInfo.body.push(astutils.returnStatement(subNode.argument));
+  chain.add(nextInfo.type, [[nextInfo.argName, nextInfo.body]]);
+  nextInfo.reset();
+  // 2: either:
+  if (parent.type === 'ExpressionStatement') {
+    // remove the result (if the result of the await is thrown away anyway)
+    return estraverse.VisitorOption.Remove;
+  } else {
+    // or make it accessable as a variable
+    nextInfo.type = 'then';
+    nextInfo.argName = 'pResp';
+    return astutils.identifier('pResp');
   }
 }
 
@@ -166,6 +183,36 @@ function processIfStatement(chain, nextInfo, subNode) {
     // a new if statement is already in the chain, no need for the old one
     // anymore
     return estraverse.VisitorOption.Remove;
+  }
+}
+
+function processLogicalExpression(chain, nextInfo, node) {
+  // FIXME: more testing required, probably not fixed enough.
+  var lazy = ['&&', '||'].indexOf(node.operator) !== -1;
+  if (lazy && astutils.containsAwait(node.right)) {
+    node.right = estraverse.replace(node.right, {
+      enter: function (subNode) {
+        if (subNode.type === 'AwaitExpression') {
+          return subNode.argument;
+        }
+        if (subNode.type === 'LogicalExpression') {
+          return processLogicalExpression(chain, nextInfo, node);
+        }
+        return astutils.skipSubFuncs(subNode);
+      }
+    });
+    var func = astutils.functionExpression([], [
+      astutils.returnStatement(node.right)
+    ])
+    node.right = astutils.callExpression(func, []);
+    node = astutils.returnStatement(node);
+    nextInfo.body.push(node);
+    chain.add(nextInfo.type, [[nextInfo.arrgName, nextInfo.body]]);
+    nextInfo.reset();
+
+    nextInfo.type = 'then';
+    nextInfo.argName = 'pResp';
+    return astutils.identifier('pResp');
   }
 }
 
@@ -195,22 +242,5 @@ function processTryStatement(chain, nextInfo, subNode) {
 
     // the original try/catch can be removed
     return estraverse.VisitorOption.Remove;
-  }
-}
-
-function processAwaitExpression(chain, nextInfo, subNode, parent) {
-  // 1: evaluate the argument as last statement in the curren link
-  nextInfo.body.push(astutils.returnStatement(subNode.argument));
-  chain.add(nextInfo.type, [[nextInfo.argName, nextInfo.body]]);
-  nextInfo.reset();
-  // 2: either:
-  if (parent.type === 'ExpressionStatement') {
-    // remove the result (if the result of the await is thrown away anyway)
-    return estraverse.VisitorOption.Remove;
-  } else {
-    // or make it accessable as a variable
-    nextInfo.type = 'then';
-    nextInfo.argName = 'pResp';
-    return astutils.identifier('pResp');
   }
 }

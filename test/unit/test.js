@@ -1,9 +1,11 @@
 var astutils = require('../../astutils');
+var astrefactor = require('../../astrefactor');
+
 require('chai').should();
 
 describe('flattening returning ifs', () => {
   it('should flatten relevant ifs', () => {
-    astutils.generate(astutils.flattenReturningIfs(astutils.parse(`
+    astutils.generate(astrefactor.flattenReturningIfs(astutils.parse(`
       function x() {
         console.log(1);
         if (i === 2) {
@@ -50,7 +52,7 @@ describe('flattening returning ifs', () => {
 
 describe('single point of exit', () => {
   function cmp(a, b) {
-    var ast = astutils.singleExitPoint(astutils.parse(a).body[0].body);
+    var ast = astrefactor.singleExitPoint(astutils.parse(a).body[0].body);
     astutils.generate(ast).should.equal(b.trim() + '\n');
   }
   it('should ignore a function with a SPOE', () => {
