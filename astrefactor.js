@@ -1,3 +1,6 @@
+// TODO: split out recursify & single exit point functions into their own
+// libraries? Might be usable for others...
+
 var estraverse = require('estraverse');
 var astutils = require('./astutils');
 
@@ -50,11 +53,45 @@ function awaitCallStatement(callee, args) {
 }
 
 function processDoWhileStatement(node, newBody) {
+  // converts
+  //
+  // do {
+  //   newBody;
+  // } while (node.test)
+  //
+  // into:
+  //
+  // await async function pRecursive() {
+  //   newBody;
+  //   if (node.test) {
+  //     await pRecursive();
+  //     return;
+  //   }
+  // }()
   newBody.body.push(astutils.ifStatement(node.test, continueStatementEquiv()));
   return awaitCallStatement(asyncRecursiveFunc(newBody.body), []);
 }
 
 function processForStatement(node, newBody) {
+  // converts
+  //
+  // for(node.init, node.test, node.update) {
+  //   newBody;
+  // }
+  //
+  // into:
+  //
+  // {
+  //   node.init;
+  //   await async function pRecursive() {
+  //     if (node.test) {
+  //       newBody;
+  //       node.update;
+  //       await pRecursive();
+  //       return;
+  //     }
+  //   }()
+  // }
   newBody.body.push(astutils.expressionStatement(node.update));
   return astutils.blockStatement([
     astutils.expressionStatement(node.init),
@@ -63,10 +100,22 @@ function processForStatement(node, newBody) {
 }
 
 function processWhileStatement(node, newBody) {
-  // converts a while loop into a recursive (async) function with an if-guard
-  // over the body.
+  // converts
+  //
+  // while (node.test) {
+  //   newBody;
+  // }
+  //
+  // into:
+  //
+  // await async function pRecursive() {
+  //   if (node.test) {
+  //     newBody;
+  //     await pRecursive();
+  //     return;
+  //   }
+  // }()
 
-  // a while loop can be thought of as having a continue as a last statement
   newBody.body.push(continueStatementEquiv());
   return awaitCallStatement(asyncRecursiveFunc([
     astutils.ifStatement(node.test, newBody)
@@ -81,7 +130,6 @@ function continueStatementEquiv() {
 }
 
 function asyncRecursiveFunc(body) {
-  //TODO: reuse for other loops!
   var node = astutils.functionExpression([], body);
   node.async = true;
   node.resolveLoose = true;

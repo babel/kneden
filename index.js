@@ -1,9 +1,13 @@
 // Keep in mind-list:
-// - all the main control structures (switch, a ? b : c, for in, etc.)
+// - all the main control structures (switch (incl. break), a ? b : c, for in, SequenceExpressions)
 //   - most of these can probably be implemented using conversion to just try/catch, if/else and (semi-)recursion.
-// - eval? Probably impossible to support (unless the whole lib is shipped?),
-//   but the readme should include a warning.
+// - eval? Probably impossible to support (unless the whole lib is shipped?
+//   might not be so crazy compared to the babel runtime size...), but the
+//   readme should include a warning.
+// - labeled statements? Probably not worth it, but if someone offer up to auto
+//   refactor them to conditionals + vars, I guess it's possible.
 // - this/arguments: save in a temporary variable when used?
+// - TODOs/FIXMEs. There are a lot of shortcuts/bugs.
 
 var estraverse = require('estraverse');
 var astutils = require('./astutils');
@@ -188,8 +192,7 @@ function processIfStatement(chain, nextInfo, subNode) {
 
 function processLogicalExpression(chain, nextInfo, node) {
   // FIXME: more testing required, probably not fixed enough.
-  var lazy = ['&&', '||'].indexOf(node.operator) !== -1;
-  if (lazy && astutils.containsAwait(node.right)) {
+  if (astutils.containsAwait(node.right)) {
     node.right = estraverse.replace(node.right, {
       enter: function (subNode) {
         if (subNode.type === 'AwaitExpression') {

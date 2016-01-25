@@ -1,22 +1,21 @@
-kneden
+Kneden
 ======
 
 > Transpile ES7 async/await to vanilla ES6 Promise chains
 
-**WARNING: kneden is a still a WIP and only a very small subset of what it promises (pun intended) is implemented.**
+**WARNING: Kneden is a still a WIP and only part of what it promises (pun intended) is implemented.**
 
 Do you want an ES7 async/await transpiler that:
 
 - produces readable code - even when generator functions are not available?
-- and doesn't come with a runtime your users have to download?
+- doesn't come with a runtime your users have to download?
 
 Then look no further! Kneden can help you.
 
 Requires the following PRs to be merged in dependencies to work:
 
-- https://github.com/nathan7/esmap/pull/1
-- https://github.com/nathan7/esmap/pull/2
 - https://github.com/nathan7/ast-hoist/pull/3
+- https://github.com/nathan7/ast-hoist/pull/4
 
 Example
 -------
