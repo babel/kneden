@@ -31,6 +31,7 @@ exports.recursifyAwaitingLoops = function (body) {
       // worth it here for 1-2, maybe 3 different loop types that aren't converted
       // into a different loop type?
       var handler = {
+        ForStatement: processForStatement,
         WhileStatement: processWhileStatement
       }[node.type];
       if (handler) {
@@ -51,13 +52,18 @@ function isLoop(node) {
 }
 
 function awaitCallStatement(callee, args) {
-  return {
-    type: 'ExpressionStatement',
-    expression: {
-      type: 'AwaitExpression',
-      argument: astutils.callExpression(callee, args)
-    }
-  };
+  return astutils.expressionStatement({
+    type: 'AwaitExpression',
+    argument: astutils.callExpression(callee, args)
+  })
+}
+
+function processForStatement(node, newBody) {
+  newBody.body.splice(-1, 0, astutils.expressionStatement(node.update));
+  return astutils.blockStatement([
+    astutils.expressionStatement(node.init),
+    processWhileStatement(node, newBody)
+  ]);
 }
 
 function processWhileStatement(node, newBody) {

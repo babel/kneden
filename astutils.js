@@ -170,6 +170,13 @@ exports.andOp = function (left, right) {
   };
 }
 
+exports.expressionStatement = function (expr) {
+  return {
+    type: 'ExpressionStatement',
+    expression: expr
+  };
+}
+
 exports.generate = function (ast) {
   return escodegen.generate(ast, {
     format: {indent: {style: '  '}},
