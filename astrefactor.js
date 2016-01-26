@@ -284,6 +284,22 @@ exports.wrapLogicalExprs = function (block) {
   });
 };
 
+exports.wrapConditionalExprs = function (block) {
+  return astutils.replaceSkippingFuncs(block, function (node) {
+    if (node.type === 'ConditionalExpression') {
+      if (astutils.containsAwait(node.consequent)) {
+        node.consequent = wrapFunction([astutils.returnStatement(node.consequent)]);
+      } else if (astutils.containsAwait(node.alternate)) {
+        node.alternate = wrapFunction([astutils.returnStatement(node.alternate)]);
+      } else {
+        // no await inside expression
+        return;
+      }
+      return astutils.awaitExpression(node);
+    }
+  });
+}
+
 exports.wrapSequenceExprs = function (block) {
   return astutils.replaceSkippingFuncs(block, function (node) {
     if (node.type === 'SequenceExpression' && astutils.containsAwait(node)) {
