@@ -15,7 +15,6 @@ Then look no further! Kneden can help you.
 Requires the following PRs to be merged in dependencies to work:
 
 - https://github.com/nathan7/ast-hoist/pull/3
-- https://github.com/nathan7/ast-hoist/pull/4
 
 Example
 -------

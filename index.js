@@ -1,5 +1,5 @@
 // Keep in mind-list:
-// - all the main control structures (switch (incl. break), a ? b : c, for in, SequenceExpressions)
+// - all the main control structures (switch (incl. break), a ? b : c, for in)
 //   - most of these can probably be implemented using conversion to just try/catch, if/else and (semi-)recursion.
 // - eval? Probably impossible to support (unless the whole lib is shipped?
 //   might not be so crazy compared to the babel runtime size...), but the
@@ -8,6 +8,8 @@
 //   refactor them to conditionals + vars, I guess it's possible.
 // - this/arguments: save in a temporary variable when used?
 // - TODOs/FIXMEs. There are a lot of shortcuts/bugs.
+
+// TODO: optimalization: if the statement is just 'return pResp', leave it out.
 
 var estraverse = require('estraverse');
 var astutils = require('./astutils');
@@ -29,6 +31,8 @@ module.exports = function compile(code) {
         node.body = astrefactor.recursifyAwaitingLoops(node.body);
         // make sure there's at most one return, and if so at the function end.
         node.body = astrefactor.singleExitPoint(node.body);
+        // wrap lazy operators to ward of premature execution
+        node.body = astrefactor.wrapLazyOperators(node.body);
         // hoist all variable/function declarations up
         node = hoist(node, false);
 
@@ -140,7 +144,6 @@ function processStatement(chain, nextInfo, node) {
       var handler = {
         AwaitExpression: processAwaitExpression,
         IfStatement: processIfStatement,
-        LogicalExpression: processLogicalExpression,
         TryStatement: processTryStatement
       }[subNode.type];
       if (handler) {
@@ -187,35 +190,6 @@ function processIfStatement(chain, nextInfo, subNode) {
     // a new if statement is already in the chain, no need for the old one
     // anymore
     return estraverse.VisitorOption.Remove;
-  }
-}
-
-function processLogicalExpression(chain, nextInfo, node) {
-  // FIXME: more testing required, probably not fixed enough.
-  if (astutils.containsAwait(node.right)) {
-    node.right = estraverse.replace(node.right, {
-      enter: function (subNode) {
-        if (subNode.type === 'AwaitExpression') {
-          return subNode.argument;
-        }
-        if (subNode.type === 'LogicalExpression') {
-          return processLogicalExpression(chain, nextInfo, node);
-        }
-        return astutils.skipSubFuncs(subNode);
-      }
-    });
-    var func = astutils.functionExpression([], [
-      astutils.returnStatement(node.right)
-    ])
-    node.right = astutils.callExpression(func, []);
-    node = astutils.returnStatement(node);
-    nextInfo.body.push(node);
-    chain.add(nextInfo.type, [[nextInfo.arrgName, nextInfo.body]]);
-    nextInfo.reset();
-
-    nextInfo.type = 'then';
-    nextInfo.argName = 'pResp';
-    return astutils.identifier('pResp');
   }
 }
 

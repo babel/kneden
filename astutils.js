@@ -177,6 +177,13 @@ exports.expressionStatement = function (expr) {
   };
 }
 
+exports.awaitExpression = function (expr) {
+  return {
+    type: 'AwaitExpression',
+    argument: expr
+  };
+}
+
 exports.generate = function (ast) {
   return escodegen.generate(ast, {
     format: {indent: {style: '  '}},

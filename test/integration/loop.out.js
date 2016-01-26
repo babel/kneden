@@ -10,7 +10,11 @@ function test() {
           i++;
         }
         return pCond1 && function () {
-          return db.put({ _id: i }).ok;
+          return Promise.resolve().then(function () {
+            return db.put({ _id: i });
+          }).then(function (pResp) {
+            return pResp.ok;
+          });
         }();
       }).then(function (pResp) {
         if (pResp) {

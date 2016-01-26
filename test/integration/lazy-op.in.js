@@ -1,3 +1,3 @@
 async function test() {
-  return a && await b;
+  return (a || await b).ok;
 }

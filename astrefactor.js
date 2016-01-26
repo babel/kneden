@@ -46,10 +46,8 @@ function isLoop(node) {
 }
 
 function awaitCallStatement(callee, args) {
-  return astutils.expressionStatement({
-    type: 'AwaitExpression',
-    argument: astutils.callExpression(callee, args)
-  })
+  var func = astutils.callExpression(callee, args);
+  return astutils.expressionStatement(astutils.awaitExpression(func));
 }
 
 function processDoWhileStatement(node, newBody) {
@@ -157,7 +155,7 @@ exports.flattenReturningIfs = function (block) {
   return estraverse.replace(block, {
     enter: function (node) {
       if (!shouldBeFlattened(node)) {
-        return;
+        return astutils.skipSubFuncs(node);
       }
       // save the test of the outer if statement in a variable
       var statements = [
@@ -275,4 +273,42 @@ function annihilateReturns(body) {
       }
     }
   }
+}
+
+exports.wrapLazyOperators = function (block) {
+  return estraverse.replace(block, {
+    enter: function (node) {
+      if (node.type === 'LogicalExpression' && astutils.containsAwait(node.right)) {
+        // a && (await b) becomes:
+        // await a && async function () {
+        //   return await b();
+        // }()
+        node.right = wrapFunction([astutils.returnStatement(node.right)]);
+        return astutils.awaitExpression(node);
+      }
+      if (node.type === 'SequenceExpression' && astutils.containsAwait(node)) {
+        // a, await b, await c becomes:
+        // await async function() {
+        //   a;
+        //   await b;
+        //   return await c;
+        // }
+        var exprs = node.expressions
+        // don't include the last item yet
+        var body = exprs.slice(0, exprs.length - 1).map(function (expr) {
+          return astutils.expressionStatement(expr);
+        });
+        // because that one gets a return statement
+        body.push(astutils.returnStatement(exprs[exprs.length - 1]));
+        return astutils.awaitExpression(wrapFunction(body));
+      }
+      return astutils.skipSubFuncs(node);
+    }
+  });
+};
+
+function wrapFunction(body) {
+  var func = astutils.functionExpression([], body);
+  func.async = true;
+  return astutils.callExpression(func, []);
 }

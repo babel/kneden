@@ -27,6 +27,7 @@ items.forEach(function (inName) {
     if (expected === result) {
       passes++;
     } else {
+      process.stderr.write('Fail - ' + outName + ':\n');
       diff.diffLines(expected, result).forEach(function (part) {
         var color = part.added ? 'green' : (part.removed ? 'red' : 'white');
         if (!part.value.trim().length) {

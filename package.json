@@ -13,7 +13,7 @@
   "dependencies": {
     "acorn": "^2.7.0",
     "acorn-es7-plugin": "^1.0.11",
-    "ast-hoist": "^3.0.3",
+    "ast-hoist": "^3.1.0",
     "escodegen": "^1.8.0",
     "estraverse": "^4.1.1"
   },
