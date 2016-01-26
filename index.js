@@ -1,16 +1,16 @@
 // Keep in mind-list:
 // - all the main control structures (switch (incl. break), a ? b : c, for in)
 //   - most of these can probably be implemented using conversion to just try/catch, if/else and (semi-)recursion.
-// - eval? Probably impossible to support (unless the whole lib is shipped?
-//   might not be so crazy compared to the babel runtime size...), but the
-//   readme should include a warning.
-// - labeled statements? Probably not worth it, but if someone offer up to auto
+// - eval? Probably impossible to support (unless the whole lib is shipped?),
+//   but the readme should include a warning.
+// - labeled statements? Probably not worth it, but if someone offers up to auto
 //   refactor them to conditionals + vars, I guess it's possible.
 // - this/arguments: save in a temporary variable when used?
 // - TODOs/FIXMEs. There are a lot of shortcuts/bugs.
+// - awaits inside awaits
 
-// TODO: wrap if bodies on a higher level, then optimize the function headers out
-// here instead (making other things profit as well)?
+// TODO: flatten Promise chains (see e.g. sequence-expr.out.js). If that works,
+// high level if statement rewriting (astrefactor.js) can be enabled as a bonus.
 
 var estraverse = require('estraverse');
 var astutils = require('./astutils');
@@ -32,8 +32,9 @@ module.exports = function compile(code) {
         node.body = astrefactor.recursifyAwaitingLoops(node.body);
         // make sure there's at most one return, and if so at the function end.
         node.body = astrefactor.singleExitPoint(node.body);
-        // wrap lazy operators to ward of premature execution
-        node.body = astrefactor.wrapLazyOperators(node.body);
+        // wrap lazily executed things to ward of premature execution
+        node.body = astrefactor.wrapLogicalExprs(node.body);
+        node.body = astrefactor.wrapSequenceExprs(node.body);
         // hoist all variable/function declarations up
         node = hoist(node, false);
 
@@ -49,18 +50,39 @@ module.exports = function compile(code) {
         this.remove();
       }
     },
-    // FIXME: also one for ast-hoist?
-    leave: removeEmptyExprStmt
+    leave: function (node) {
+      // FIXME removeEmptyExprStmt: also one for ast-hoist?
+      return inlineFunction(node) || removeEmptyExprStmt(node);
+    }
   });
 
   // convert back to code
   return astutils.generate(ast);
 };
 
+function inlineFunction(node) {
+  if (node.type === 'CallExpression' && node.callee.type === 'FunctionExpression') {
+    // Optimalization: function inlining. Might seem very specific, but
+    // functions matching these requirements are quite commonly created in the
+    // refactoring process.
+    var func = node.callee;
+    var funcMatch = (
+      !func.id &&
+      !func.params.length &&
+      func.body.body.length === 1 &&
+      func.body.body[0].type === 'ReturnStatement'
+      // TODO: check additionally for 'argumenst' & 'this' inside function
+    );
+    if (funcMatch && !node.arguments.length) {
+      return func.body.body[0].argument;
+    }
+  }
+}
+
 function removeEmptyExprStmt(node) {
     // fix AST after removing expressions
     if (node.type === 'ExpressionStatement' && !node.expression) {
-      this.remove();
+      return estraverse.VisitorOption.Remove;
     }
 }
 
@@ -140,21 +162,17 @@ function processStatement(chain, nextInfo, node) {
   // replace any control structures with equivalents that can work with
   // ``await``s. Then make sure those awaits are calculated just before they're
   // needed and passed in.
-  node = estraverse.replace(node, {
-    enter: function (subNode, parent) {
-      var handler = {
-        AwaitExpression: processAwaitExpression,
-        IfStatement: processIfStatement,
-        ReturnStatement: processReturnStatement,
-        TryStatement: processTryStatement
-      }[subNode.type];
-      if (handler) {
-        return handler(chain, nextInfo, subNode, parent);
-      }
-      return astutils.skipSubFuncs(subNode);
-    },
-    leave: removeEmptyExprStmt
-  });
+  node = astutils.replaceSkippingFuncs(node, function (subNode, parent) {
+    var handler = {
+      AwaitExpression: processAwaitExpression,
+      IfStatement: processIfStatement,
+      ReturnStatement: processReturnStatement,
+      TryStatement: processTryStatement
+    }[subNode.type];
+    if (handler) {
+      return handler(chain, nextInfo, subNode, parent);
+    }
+  }, removeEmptyExprStmt);
   if (node) {
     // only if the node still exists, add it to the statements that still need
     // to be added to the chain.
@@ -196,7 +214,8 @@ function processIfStatement(chain, nextInfo, subNode) {
 }
 
 function processReturnStatement(chain, nextInfo, node) {
-  // prevents the useless .then(function (pResp) { return pResp; })
+  // Optimalization: prevents useless .then(function (pResp) { return pResp; })
+  // code
   if (node.argument.type === 'AwaitExpression') {
     node.argument = node.argument.argument;
   }

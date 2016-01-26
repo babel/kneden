@@ -9,13 +9,11 @@ function test() {
         if (pCond1) {
           i++;
         }
-        return pCond1 && function () {
-          return Promise.resolve().then(function () {
-            return db.put({ _id: i });
-          }).then(function (pResp) {
-            return pResp.ok;
-          });
-        }();
+        return pCond1 && Promise.resolve().then(function () {
+          return db.put({ _id: i });
+        }).then(function (pResp) {
+          return pResp.ok;
+        });
       }).then(function (pResp) {
         if (pResp) {
           return Promise.resolve().then(function () {

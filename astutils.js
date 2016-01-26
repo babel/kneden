@@ -184,6 +184,15 @@ exports.awaitExpression = function (expr) {
   };
 }
 
+exports.replaceSkippingFuncs = function (node, enter, leave) {
+  return estraverse.replace(node, {
+    enter: function (node, parent) {
+      return enter(node, parent) || exports.skipSubFuncs(node);
+    },
+    leave: leave
+  });
+}
+
 exports.generate = function (ast) {
   return escodegen.generate(ast, {
     format: {indent: {style: '  '}},

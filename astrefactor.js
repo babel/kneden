@@ -1,39 +1,33 @@
 // TODO: split out recursify & single exit point functions into their own
 // libraries? Might be usable for others...
 
-var estraverse = require('estraverse');
 var astutils = require('./astutils');
 
 exports.recursifyAwaitingLoops = function (body) {
   // for every loop that contains await: convert from iterative statement to a
   // recursive (async) function.
-  return estraverse.replace(body, {
-    enter: function (node) {
-      if (!(isLoop(node) && astutils.containsAwait(node))) {
-        return astutils.skipSubFuncs(node);
+  return astutils.replaceSkippingFuncs(body, function (node) {
+    if (!(isLoop(node) && astutils.containsAwait(node))) {
+      return;
+    }
+    var newBody = astutils.replaceSkippingFuncs(node.body, function (subNode) {
+      // replace continue/break with their recursive equivalents
+      if (subNode.type === 'BreakStatement') {
+        return astutils.returnStatement();
       }
-      var newBody = estraverse.replace(node.body, {
-        // replace continue/break with their recursive equivalents
-        enter: function (subNode) {
-          if (subNode.type === 'BreakStatement') {
-            return astutils.returnStatement();
-          }
-          if (subNode.type === 'ContinueStatement') {
-            return continueStatementEquiv();
-          }
-          return astutils.skipSubFuncs(node)
-        }
-      });
-      // loop-specific stuff
-      var handler = {
-        DoWhileStatement: processDoWhileStatement,
-        ForStatement: processForStatement,
-        WhileStatement: processWhileStatement
-      }[node.type];
-      return handler(node, newBody);
-    },
-    leave: squashBlockStatements
-  });
+      if (subNode.type === 'ContinueStatement') {
+        return continueStatementEquiv();
+      }
+      return astutils.skipSubFuncs(node)
+    });
+    // loop-specific stuff
+    var handler = {
+      DoWhileStatement: processDoWhileStatement,
+      ForStatement: processForStatement,
+      WhileStatement: processWhileStatement
+    }[node.type];
+    return handler(node, newBody);
+  }, squashBlockStatements);
 }
 
 function isLoop(node) {
@@ -43,15 +37,6 @@ function isLoop(node) {
     'ForStatement',
     'ForInStatement'
   ].indexOf(node.type) !== -1;
-}
-
-function awaitCall(callee, args) {
-  var func = astutils.callExpression(callee, args);
-  return astutils.awaitExpression(func);
-}
-
-function awaitCallStatement(callee, args) {
-  return astutils.expressionStatement(awaitCall(callee, args));
 }
 
 function processDoWhileStatement(node, newBody) {
@@ -71,7 +56,24 @@ function processDoWhileStatement(node, newBody) {
   // }()
   var continueBlock = astutils.blockStatement([continueStatementEquiv()]);
   newBody.body.push(astutils.ifStatement(node.test, continueBlock));
-  return awaitCallStatement(asyncRecursiveFunc(newBody.body), []);
+  return awaitStatement(recursiveWrapFunction(newBody.body));
+}
+
+function recursiveWrapFunction(body) {
+  var node = wrapFunction(body);
+  node.callee.resolveLoose = true;
+  node.callee.id = astutils.identifier('pRecursive');
+  return node;
+}
+
+function wrapFunction(body) {
+  var func = astutils.functionExpression([], body);
+  func.async = true;
+  return astutils.callExpression(func, []);
+}
+
+function awaitStatement(func) {
+  return astutils.expressionStatement(astutils.awaitExpression(func));
 }
 
 function processForStatement(node, newBody) {
@@ -117,9 +119,9 @@ function processWhileStatement(node, newBody) {
   // }()
 
   newBody.body.push(continueStatementEquiv());
-  return awaitCallStatement(asyncRecursiveFunc([
+  return awaitStatement(recursiveWrapFunction([
     astutils.ifStatement(node.test, newBody)
-  ]), []);
+  ]));
 }
 
 function continueStatementEquiv() {
@@ -127,12 +129,9 @@ function continueStatementEquiv() {
   return astutils.returnStatement(call);
 }
 
-function asyncRecursiveFunc(body) {
-  var node = astutils.functionExpression([], body);
-  node.async = true;
-  node.resolveLoose = true;
-  node.id = astutils.identifier('pRecursive');
-  return node;
+function awaitCall(callee, args) {
+  var func = astutils.callExpression(callee, args);
+  return astutils.awaitExpression(func);
 }
 
 function squashBlockStatements(node) {
@@ -152,49 +151,46 @@ function squashBlockStatements(node) {
 
 exports.flattenReturningIfs = function (block) {
   var flattenedCount = 0;
-  return estraverse.replace(block, {
-    enter: function (node) {
-      if (!shouldBeFlattened(node)) {
-        return astutils.skipSubFuncs(node);
+  return astutils.replaceSkippingFuncs(block, function (node) {
+    if (!shouldBeFlattened(node)) {
+      return;
+    }
+    // save the test of the outer if statement in a variable
+    var statements = [
+      astutils.variableDeclaration('pCond' + ++flattenedCount, node.test)
+    ];
+    var stillToAdd = [];
+    // adds kept back statements to the main collection, guarded by the
+    // saved test
+    var guard = astutils.identifier('pCond' + flattenedCount);
+    var add = function () {
+      if (stillToAdd.length) {
+        var block = astutils.blockStatement(stillToAdd);
+        statements.push(astutils.ifStatement(guard, block));
+        stillToAdd = [];
       }
-      // save the test of the outer if statement in a variable
-      var statements = [
-        astutils.variableDeclaration('pCond' + ++flattenedCount, node.test)
-      ];
-      var stillToAdd = [];
-      // adds kept back statements to the main collection, guarded by the
-      // saved test
-      var guard = astutils.identifier('pCond' + flattenedCount);
-      var add = function () {
-        if (stillToAdd.length) {
-          var block = astutils.blockStatement(stillToAdd);
-          statements.push(astutils.ifStatement(guard, block));
-          stillToAdd = [];
+    }
+    node.consequent.body.forEach(function (subNode) {
+      if (subNode.type === 'IfStatement' && containsReturn(subNode)) {
+        add();
+        // change the inner if statement's test so it includes the outer
+        // statement's test and add it to the main collection of statements.
+        subNode.test = astutils.andOp(guard, subNode.test);
+        if (subNode.alternate) {
+          subNode.alternate = astutils.ifStatement(guard, subNode.alternate);
         }
+        statements.push(subNode);
+      } else {
+        // a normal statement which can be added later
+        stillToAdd.push(subNode);
       }
-      node.consequent.body.forEach(function (subNode) {
-        if (subNode.type === 'IfStatement' && containsReturn(subNode)) {
-          add();
-          // change the inner if statement's test so it includes the outer
-          // statement's test and add it to the main collection of statements.
-          subNode.test = astutils.andOp(guard, subNode.test);
-          if (subNode.alternate) {
-            subNode.alternate = astutils.ifStatement(guard, subNode.alternate);
-          }
-          statements.push(subNode);
-        } else {
-          // a normal statement which can be added later
-          stillToAdd.push(subNode);
-        }
-      });
-      // add the remaining kept back statements
-      add();
-      // and bundle everything in a block (which will be flattened away by
-      // leave())
-      return astutils.blockStatement(statements);
-    },
-    leave: squashBlockStatements
-  });
+    });
+    // add the remaining kept back statements
+    add();
+    // and bundle everything in a block (which will be flattened away by
+    // leave())
+    return astutils.blockStatement(statements);
+  }, squashBlockStatements);
 }
 
 function containsReturn(node) {
@@ -275,40 +271,80 @@ function annihilateReturns(body) {
   }
 }
 
-exports.wrapLazyOperators = function (block) {
-  return estraverse.replace(block, {
-    enter: function (node) {
-      if (node.type === 'LogicalExpression' && astutils.containsAwait(node.right)) {
-        // a && (await b) becomes:
-        // await a && async function () {
-        //   return await b();
-        // }()
-        node.right = wrapFunction([astutils.returnStatement(node.right)]);
-        return astutils.awaitExpression(node);
-      }
-      if (node.type === 'SequenceExpression' && astutils.containsAwait(node)) {
-        // a, await b, await c becomes:
-        // await async function() {
-        //   a;
-        //   await b;
-        //   return await c;
-        // }
-        var exprs = node.expressions
-        // don't include the last item yet
-        var body = exprs.slice(0, exprs.length - 1).map(function (expr) {
-          return astutils.expressionStatement(expr);
-        });
-        // because that one gets a return statement
-        body.push(astutils.returnStatement(exprs[exprs.length - 1]));
-        return astutils.awaitExpression(wrapFunction(body));
-      }
-      return astutils.skipSubFuncs(node);
+exports.wrapLogicalExprs = function (block) {
+  return astutils.replaceSkippingFuncs(block, function (node) {
+    if (node.type === 'LogicalExpression' && astutils.containsAwait(node.right)) {
+      // a && (await b) becomes:
+      // await a && async function () {
+      //   return await b();
+      // }()
+      node.right = wrapFunction([astutils.returnStatement(node.right)]);
+      return astutils.awaitExpression(node);
     }
   });
 };
 
-function wrapFunction(body) {
-  var func = astutils.functionExpression([], body);
-  func.async = true;
-  return astutils.callExpression(func, []);
+exports.wrapSequenceExprs = function (block) {
+  return astutils.replaceSkippingFuncs(block, function (node) {
+    if (node.type === 'SequenceExpression' && astutils.containsAwait(node)) {
+      // a, await b, await c becomes:
+      // await async function() {
+      //   a;
+      //   await b;
+      //   return await c;
+      // }
+      var exprs = node.expressions
+      // don't include the last item yet
+      var body = exprs.slice(0, exprs.length - 1).map(function (expr) {
+        return astutils.expressionStatement(expr);
+      });
+      // because that one gets a return statement
+      body.push(astutils.returnStatement(exprs[exprs.length - 1]));
+      return astutils.awaitExpression(wrapFunction(body));
+    }
+  });
 }
+
+/*
+See index.js TODO near the top for why this is still here.
+
+exports.wrapIfStatements = function (block) {
+  // converts:
+  //
+  // if (a) {
+  //   await a;
+  // }
+  //
+  // into:
+  //
+  // await async function () {
+  //   if (a) {
+  //     return await async function () {
+  //       await a;
+  //     }();
+  //   }
+  // }()
+  return astutils.replaceSkippingFuncs(block, function (node) {
+    if (node.type === 'IfStatement' && !node.safed) {
+      if (astutils.containsAwait(node.consequent)) {
+        node.consequent = wrapIfBranch(node.consequent);
+      } else if (astutils.containsAwait(node.alternate)) {
+        node.alternate = wrapIfBranch(node.alternate);
+      } else {
+        // no await
+        return;
+      }
+      node.safed = true;
+      return awaitStatement(wrapFunction([node]), []);
+    }
+  });
+}
+
+function wrapIfBranch(branch) {
+  var func = wrapFunction(branch.body);
+  func.callee.resolveLoose = true;
+  return astutils.blockStatement([
+    astutils.returnStatement(astutils.awaitExpression(func))
+  ]);
+}
+*/
