@@ -45,9 +45,13 @@ function isLoop(node) {
   ].indexOf(node.type) !== -1;
 }
 
-function awaitCallStatement(callee, args) {
+function awaitCall(callee, args) {
   var func = astutils.callExpression(callee, args);
-  return astutils.expressionStatement(astutils.awaitExpression(func));
+  return astutils.awaitExpression(func);
+}
+
+function awaitCallStatement(callee, args) {
+  return astutils.expressionStatement(awaitCall(callee, args));
 }
 
 function processDoWhileStatement(node, newBody) {
@@ -62,11 +66,11 @@ function processDoWhileStatement(node, newBody) {
   // await async function pRecursive() {
   //   newBody;
   //   if (node.test) {
-  //     await pRecursive();
-  //     return;
+  //     return await pRecursive();
   //   }
   // }()
-  newBody.body.push(astutils.ifStatement(node.test, continueStatementEquiv()));
+  var continueBlock = astutils.blockStatement([continueStatementEquiv()]);
+  newBody.body.push(astutils.ifStatement(node.test, continueBlock));
   return awaitCallStatement(asyncRecursiveFunc(newBody.body), []);
 }
 
@@ -85,8 +89,7 @@ function processForStatement(node, newBody) {
   //     if (node.test) {
   //       newBody;
   //       node.update;
-  //       await pRecursive();
-  //       return;
+  //       return await pRecursive();
   //     }
   //   }()
   // }
@@ -109,8 +112,7 @@ function processWhileStatement(node, newBody) {
   // await async function pRecursive() {
   //   if (node.test) {
   //     newBody;
-  //     await pRecursive();
-  //     return;
+  //     return await pRecursive();
   //   }
   // }()
 
@@ -121,10 +123,8 @@ function processWhileStatement(node, newBody) {
 }
 
 function continueStatementEquiv() {
-  return astutils.blockStatement([
-    awaitCallStatement(astutils.identifier('pRecursive'), []),
-    astutils.returnStatement()
-  ]);
+  var call = awaitCall(astutils.identifier('pRecursive'), []);
+  return astutils.returnStatement(call);
 }
 
 function asyncRecursiveFunc(body) {

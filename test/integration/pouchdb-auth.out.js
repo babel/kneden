@@ -64,8 +64,6 @@ describe('SyncAuthTests', () => {
       return shouldThrowError(() => {
         return Promise.resolve().then(function () {
           return db.stopUsingAsAuthenticationDB();
-        }).then(function (pResp) {
-          return pResp;
         });
       });
     }).then(function () {
@@ -78,8 +76,6 @@ describe('SyncAuthTests', () => {
       return shouldThrowError(() => {
         return Promise.resolve().then(function () {
           return db.useAsAuthenticationDB();
-        }).then(function (pResp) {
-          return pResp;
         });
       });
     }).then(function () {
@@ -137,8 +133,6 @@ describe('SyncAuthTests', () => {
       return shouldThrowError(() => {
         return Promise.resolve().then(function () {
           return db.logIn('username', 'wrongPassword');
-        }).then(function (pResp) {
-          return pResp;
         });
       });
     }).then(function (pResp) {
@@ -167,8 +161,6 @@ describe('SyncAuthTests', () => {
       return shouldThrowError(() => {
         return Promise.resolve().then(function () {
           return db.post({});
-        }).then(function (pResp) {
-          return pResp;
         });
       });
     }).then(function (pResp) {
@@ -200,8 +192,6 @@ describe('SyncAuthTests', () => {
       return shouldThrowError(() => {
         return Promise.resolve().then(function () {
           return db.logIn('test', 'unimportant');
-        }).then(function (pResp) {
-          return pResp;
         });
       });
     }).then(function (pResp) {
@@ -346,8 +336,6 @@ describe('No automated test setup', () => {
       return shouldThrowError(() => {
         return Promise.resolve().then(function () {
           return db.logIn('username2', 'test');
-        }).then(function (pResp) {
-          return pResp;
         });
       });
     }).then(function (pResp) {

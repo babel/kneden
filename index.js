@@ -9,7 +9,8 @@
 // - this/arguments: save in a temporary variable when used?
 // - TODOs/FIXMEs. There are a lot of shortcuts/bugs.
 
-// TODO: optimalization: if the statement is just 'return pResp', leave it out.
+// TODO: wrap if bodies on a higher level, then optimize the function headers out
+// here instead (making other things profit as well)?
 
 var estraverse = require('estraverse');
 var astutils = require('./astutils');
@@ -144,6 +145,7 @@ function processStatement(chain, nextInfo, node) {
       var handler = {
         AwaitExpression: processAwaitExpression,
         IfStatement: processIfStatement,
+        ReturnStatement: processReturnStatement,
         TryStatement: processTryStatement
       }[subNode.type];
       if (handler) {
@@ -191,6 +193,14 @@ function processIfStatement(chain, nextInfo, subNode) {
     // anymore
     return estraverse.VisitorOption.Remove;
   }
+}
+
+function processReturnStatement(chain, nextInfo, node) {
+  // prevents the useless .then(function (pResp) { return pResp; })
+  if (node.argument.type === 'AwaitExpression') {
+    node.argument = node.argument.argument;
+  }
+  return node;
 }
 
 function processTryStatement(chain, nextInfo, subNode) {

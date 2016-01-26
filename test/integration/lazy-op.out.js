@@ -3,8 +3,6 @@ function test() {
     return a || function () {
       return Promise.resolve().then(function () {
         return b;
-      }).then(function (pResp) {
-        return pResp;
       });
     }();
   }).then(function (pResp) {

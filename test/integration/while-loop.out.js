@@ -17,7 +17,5 @@ function test() {
     }();
   }).then(function () {
     return db.allDocs();
-  }).then(function (pResp) {
-    return pResp;
   });
 }

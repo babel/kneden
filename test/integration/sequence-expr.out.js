@@ -9,8 +9,6 @@ function test() {
         c();
         d();
         return e();
-      }).then(function (pResp) {
-        return pResp;
       });
     }();
   }).then(function () {
