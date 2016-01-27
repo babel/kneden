@@ -1,6 +1,6 @@
 async function test() {
   try {
-    this.would.fail;
+    going.to.fail;
   } catch (err) {
     await postErrorMessage('http://my.webservice/error', err);
   }

@@ -4,7 +4,6 @@
 //   but the readme should include a warning.
 // - labeled statements? Probably not worth it, but if someone offers up to auto
 //   refactor them to conditionals + vars, I guess it's possible.
-// - this/arguments: save in a temporary variable when used?
 // - TODOs/FIXMEs. There's probably loads of bugs.
 
 // TODO: flatten Promise chains (see e.g. sequence-expr.out.js). If that works,
@@ -97,6 +96,29 @@ function newFunctionBody(func) {
     // function, so variables don't suddenly become inaccessable.
     var decl = oldBody.body.shift();
     bodyBegin.push(decl);
+  }
+
+  var usesThis = false;
+  var usesArguments = false;
+  oldBody = astutils.replaceSkippingFuncs(oldBody, function (node) {
+    if (node.type === 'ThisExpression') {
+      usesThis = true;
+      return astutils.identifier('pThis');
+    }
+    if (node.type === 'Identifier' && node.name === 'arguments') {
+      // TODO: check if arguments has been redefined by the user? Would require
+      // Might even be possible without escope thanks to asthoist.
+      usesArguments = true;
+      return astutils.identifier('pArguments');
+    }
+  });
+  if (usesThis) {
+    var that = astutils.thisExpression();
+    bodyBegin.push(astutils.variableDeclaration('pThis', that));
+  }
+  if (usesArguments) {
+    var id = astutils.identifier('arguments');
+    bodyBegin.push(astutils.variableDeclaration('pArguments', id))
   }
 
   var shinyNewBody = newBody(oldBody, !func.resolveLoose);

@@ -226,6 +226,12 @@ exports.forInStatement = function (left, right, body) {
   }
 }
 
+exports.thisExpression = function () {
+  return {
+    type: 'ThisExpression'
+  };
+}
+
 exports.generate = function (ast) {
   return escodegen.generate(ast, {
     format: {indent: {style: '  '}},
