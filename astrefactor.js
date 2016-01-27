@@ -345,15 +345,17 @@ exports.wrapLogicalExprs = function (block) {
 exports.wrapConditionalExprs = function (block) {
   return astutils.replaceSkippingFuncs(block, function (node) {
     if (node.type === 'ConditionalExpression') {
-      if (astutils.containsAwait(node.consequent)) {
+      var consequentHasAwait = astutils.containsAwait(node.consequent);
+      var alternateHasAwait = astutils.containsAwait(node.alternate);
+      if (consequentHasAwait) {
         node.consequent = wrapFunction([astutils.returnStatement(node.consequent)]);
-      } else if (astutils.containsAwait(node.alternate)) {
-        node.alternate = wrapFunction([astutils.returnStatement(node.alternate)]);
-      } else {
-        // no await inside expression
-        return;
       }
-      return astutils.awaitExpression(node);
+      if (alternateHasAwait) {
+        node.alternate = wrapFunction([astutils.returnStatement(node.alternate)]);
+      }
+      if (consequentHasAwait || alternateHasAwait) {
+        return astutils.awaitExpression(node);
+      }
     }
   });
 }

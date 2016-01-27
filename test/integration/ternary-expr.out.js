@@ -6,7 +6,9 @@ function test() {
     }) : c();
   }).then(function (pResp) {
     test = pResp;
-    return d() ? e() : Promise.resolve().then(function () {
+    return d() ? Promise.resolve().then(function () {
+      return e();
+    }) : Promise.resolve().then(function () {
       return f();
     });
   });
