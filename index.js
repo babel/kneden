@@ -6,7 +6,6 @@
 //   refactor them to conditionals + vars, I guess it's possible.
 // - this/arguments: save in a temporary variable when used?
 // - TODOs/FIXMEs. There's probably loads of bugs.
-// - awaits inside awaits
 
 // TODO: flatten Promise chains (see e.g. sequence-expr.out.js). If that works,
 // high level if statement rewriting (astrefactor.js) can be enabled as a bonus.
@@ -177,9 +176,14 @@ function processStatement(chain, nextInfo, node) {
   }
 }
 
-function processAwaitExpression(chain, nextInfo, subNode, parent) {
+function processAwaitExpression(chain, nextInfo, node, parent) {
   // 1: evaluate the argument as last statement in the curren link
-  nextInfo.body.push(astutils.returnStatement(subNode.argument));
+  node.argument = astutils.replaceSkippingFuncs(node.argument, function (subNode, subParent) {
+    if (subNode.type === 'AwaitExpression') {
+      return processAwaitExpression(chain, nextInfo, subNode, subParent);
+    }
+  });
+  nextInfo.body.push(astutils.returnStatement(node.argument));
   chain.add(nextInfo.type, [[nextInfo.argName, nextInfo.body]]);
   nextInfo.reset();
   // 2: either:
