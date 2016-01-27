@@ -1,6 +1,6 @@
 {
   "name": "kneden",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Compile ES7 async/await to vanilla ES6 Promise chains",
   "main": "index.js",
   "directories": {

@@ -1,6 +1,11 @@
 Kneden
 ======
 
+[![Build Status](https://travis-ci.org/marten-de-vries/kneden.svg?branch=master)](https://travis-ci.org/marten-de-vries/kneden)
+[![Dependency Status](https://david-dm.org/marten-de-vries/kneden.svg)](https://david-dm.org/marten-de-vries/kneden)
+[![devDependency Status](https://david-dm.org/marten-de-vries/kneden/dev-status.svg)](https://david-dm.org/marten-de-vries/kneden#info=devDependencies)
+
+
 > Transpile ES7 async/await to vanilla ES6 Promise chains
 
 **WARNING: Kneden is a still a WIP and only part of what it promises (pun intended) is implemented.**
