@@ -2,8 +2,11 @@
   "name": "kneden",
   "version": "0.2.0",
   "description": "Compile ES7 async/await to vanilla ES6 Promise chains",
-  "main": "index.js",
+  "main": "lib/index.js",
+  "bin": "./bin/kneden",
   "directories": {
+    "bin": "bin",
+    "lib": "lib",
     "test": "test"
   },
   "repository": {

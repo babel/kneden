@@ -1,5 +1,5 @@
-var astutils = require('../../astutils');
-var astrefactor = require('../../astrefactor');
+var astutils = require('../../lib/astutils');
+var astrefactor = require('../../lib/astrefactor');
 
 require('chai').should();
 
