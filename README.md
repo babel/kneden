@@ -12,10 +12,6 @@ Do you want an ES7 async/await transpiler that:
 
 Then look no further! Kneden can help you.
 
-Requires the following PRs to be merged in dependencies to work:
-
-- https://github.com/nathan7/ast-hoist/pull/3
-
 Example
 -------
 

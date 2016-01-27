@@ -34,12 +34,20 @@ exports.isFunc = function (node) {
 
 exports.resolveBase = function () {
   // AST-ish for ``Promise.resolve()``
-  return exports.callExpression({
-    type: 'MemberExpression',
-    object: exports.identifier('Promise'),
-    property: exports.identifier('resolve')
-  }, []);
+  var memberExpr = exports.memberExpression(
+    exports.identifier('Promise'),
+    exports.identifier('resolve')
+  )
+  return exports.callExpression(memberExpr, []);
 };
+
+exports.memberExpression = function (object, property) {
+  return {
+    type: 'MemberExpression',
+    object: object,
+    property: property
+  };
+}
 
 exports.callExpression = function (callee, args) {
   return {
@@ -161,6 +169,15 @@ exports.variableDeclaration = function (name, value) {
   };
 }
 
+exports.assignmentExpression = function (left, right) {
+  return {
+    type: 'AssignmentExpression',
+    operator: '=',
+    left: left,
+    right: right
+  };
+}
+
 exports.andOp = function (left, right) {
   return {
     type: 'LogicalExpression',
@@ -191,6 +208,22 @@ exports.replaceSkippingFuncs = function (node, enter, leave) {
     },
     leave: leave
   });
+}
+
+exports.arrayExpression = function (elements) {
+  return {
+    type: 'ArrayExpression',
+    elements: elements
+  };
+}
+
+exports.forInStatement = function (left, right, body) {
+  return {
+    type: 'ForInStatement',
+    left: left,
+    right: right,
+    body: exports.blockStatement(body)
+  }
 }
 
 exports.generate = function (ast) {

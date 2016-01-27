@@ -1,5 +1,5 @@
 // Keep in mind-list:
-// - implement switch (incl. break) & the for in loop
+// - implement switch (incl. break)
 // - eval? Probably impossible to support (unless the whole lib is shipped?),
 //   but the readme should include a warning.
 // - labeled statements? Probably not worth it, but if someone offers up to auto

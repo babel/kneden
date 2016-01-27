@@ -23,6 +23,7 @@ exports.recursifyAwaitingLoops = function (body) {
     // loop-specific stuff
     var handler = {
       DoWhileStatement: processDoWhileStatement,
+      ForInStatement: processForInStatement,
       ForStatement: processForStatement,
       WhileStatement: processWhileStatement
     }[node.type];
@@ -74,6 +75,63 @@ function wrapFunction(body) {
 
 function awaitStatement(func) {
   return astutils.expressionStatement(astutils.awaitExpression(func));
+}
+
+function processForInStatement(node, newBody) {
+  // converts
+  // for (node.left in node.right) {
+  //   newBody;
+  // }
+  //
+  // info:
+  //
+  // {
+  //   var pItems = [];
+  //   for (var pItem in node.right) {
+  //     pItems.push(pItem);
+  //   }
+  //   pItems.reverse();
+  //   await async function pRecursive() {
+  //     if (pItems.length) {
+  //       node.left = pItems.pop();
+  //       newBody;
+  //       return await pRecursive();
+  //     }
+  //   }
+  // }
+  var pItems = astutils.identifier('pItems');
+  var push = astutils.memberExpression(pItems, astutils.identifier('push'));
+  var reverse = astutils.memberExpression(pItems, astutils.identifier('reverse'));
+  var pop = astutils.memberExpression(pItems, astutils.identifier('pop'));
+  var length = astutils.memberExpression(pItems, astutils.identifier('length'));
+
+  var pushCall = astutils.callExpression(push, [astutils.identifier('pItem')]);
+  var reverseCall = astutils.callExpression(reverse, []);
+  var popCall = astutils.callExpression(pop, []);
+
+  var id;
+  var block = [];
+  if (node.left.type === 'VariableDeclaration') {
+    id = node.left.declarations[0].id;
+    block.push(node.left);
+  } else {
+    id = node.left;
+  }
+  var assignment = astutils.assignmentExpression(id, popCall);
+  newBody.body.unshift(astutils.expressionStatement(assignment));
+
+  block.push.apply(block, [
+    astutils.variableDeclaration('pItems', astutils.arrayExpression([])),
+    astutils.forInStatement(
+      astutils.variableDeclaration('pItem'),
+      node.right,
+      [astutils.expressionStatement(pushCall)]
+    ),
+    astutils.expressionStatement(reverseCall),
+    processWhileStatement({test: length}, newBody)
+  ]);
+
+  return astutils.blockStatement(block);
 }
 
 function processForStatement(node, newBody) {
