@@ -5,7 +5,7 @@
 // - labeled statements? Probably not worth it, but if someone offers up to auto
 //   refactor them to conditionals + vars, I guess it's possible.
 // - this/arguments: save in a temporary variable when used?
-// - TODOs/FIXMEs. There are a lot of shortcuts/bugs.
+// - TODOs/FIXMEs. There's probably loads of bugs.
 // - awaits inside awaits
 
 // TODO: flatten Promise chains (see e.g. sequence-expr.out.js). If that works,
@@ -29,8 +29,9 @@ module.exports = function compile(code) {
         node = astutils.blockify(node);
         // convert iterative loops to their recursive equivalent
         node.body = astrefactor.recursifyAwaitingLoops(node.body);
-        // make sure there's at most one return, and if so at the function end.
-        node.body = astrefactor.singleExitPoint(node.body);
+        // make sure returns don't end up in the wrong place in the future
+        // promise chain.
+        node.body = astrefactor.directlyExitable(node.body);
         // wrap lazily executed things to ward of premature execution
         node.body = astrefactor.wrapLogicalExprs(node.body);
         node.body = astrefactor.wrapConditionalExprs(node.body);
@@ -111,10 +112,6 @@ function isDeclaration(type) {
 }
 
 function newBody(oldBody, resolveStrict) {
-  if (!oldBody) {
-    // e.g. for .alternate in if statements
-    return null;
-  }
   var chain = bodyToChain(oldBody, resolveStrict);
   // wrap the body so it fits in the AST
   return astutils.blockStatement([astutils.returnStatement(chain.ast)]);
@@ -198,10 +195,18 @@ function processAwaitExpression(chain, nextInfo, subNode, parent) {
 }
 
 function processIfStatement(chain, nextInfo, subNode) {
-  if (astutils.containsAwait(subNode.consequent) || astutils.containsAwait(subNode.alternate)) {
-    // subchains inside both the if and else part of the statement
+  var consequentHasAwait = astutils.containsAwait(subNode.consequent);
+  var alternateHasAwait = astutils.containsAwait(subNode.alternate);
+
+  // subchains inside the if and else part of the statement
+  if (consequentHasAwait) {
     subNode.consequent = newBody(subNode.consequent, false);
+  }
+  if (alternateHasAwait) {
     subNode.alternate = newBody(subNode.alternate, false);
+  }
+
+  if (consequentHasAwait || alternateHasAwait) {
     // add the if statement to the chain as the last item of this link
     processStatement(chain, nextInfo, subNode);
     // and add a new, empty link to the chain

@@ -1,4 +1,4 @@
-// TODO: split out recursify & single exit point functions into their own
+// TODO: split out recursify & flatten if statement functions into their own
 // libraries? Might be usable for others...
 
 var astutils = require('./astutils');
@@ -213,42 +213,22 @@ exports.flattenReturningIfs = function (block) {
     if (!shouldBeFlattened(node)) {
       return;
     }
-    // save the test of the outer if statement in a variable
-    var statements = [
-      astutils.variableDeclaration('pCond' + ++flattenedCount, node.test)
-    ];
-    var stillToAdd = [];
-    // adds kept back statements to the main collection, guarded by the
-    // saved test
-    var guard = astutils.identifier('pCond' + flattenedCount);
-    var add = function () {
-      if (stillToAdd.length) {
-        var block = astutils.blockStatement(stillToAdd);
-        statements.push(astutils.ifStatement(guard, block));
-        stillToAdd = [];
-      }
-    }
+    // the test of the outer variable serves as a guard
+    var block = new FlattenedIf('pCond' + ++flattenedCount, node.test, node.alternate);
     node.consequent.body.forEach(function (subNode) {
-      if (subNode.type === 'IfStatement' && containsReturn(subNode)) {
-        add();
-        // change the inner if statement's test so it includes the outer
-        // statement's test and add it to the main collection of statements.
-        subNode.test = astutils.andOp(guard, subNode.test);
-        if (subNode.alternate) {
-          subNode.alternate = astutils.ifStatement(guard, subNode.alternate);
-        }
-        statements.push(subNode);
-      } else {
-        // a normal statement which can be added later
-        stillToAdd.push(subNode);
-      }
+      block.add(subNode);
     });
-    // add the remaining kept back statements
-    add();
-    // and bundle everything in a block (which will be flattened away by
-    // leave())
-    return astutils.blockStatement(statements);
+    var ast = block.toAST();
+    return ast;
   }, squashBlockStatements);
+}
+
+function shouldBeFlattened(node) {
+  // Does ``node`` (IfStatement) have a descendant (IfStatement) that contains
+  // a return in its consequent?
+  return astutils.matches(node.consequent, function (subNode) {
+    return node !== subNode && node.type === 'IfStatement' && subNode.type === 'IfStatement' && containsReturn(subNode);
+  });
 }
 
 function containsReturn(node) {
@@ -258,73 +238,115 @@ function containsReturn(node) {
   });
 }
 
-function shouldBeFlattened(node) {
-  // Does ``node`` (IfStatement) have a descendant (IfStatement) that contains
-  // a return?
-  return astutils.matches(node, function (subNode) {
-    return node !== subNode && node.type === 'IfStatement' && subNode.type === 'IfStatement' && containsReturn(subNode);
-  });
+function FlattenedIf(name, guard, alternate) {
+  this._guardID = astutils.identifier(name);
+  this._queue = [];
+  this._statements = [
+    astutils.variableDeclaration(name, guard)
+  ];
+  this._elseBody = (alternate || {}).body || [];
 }
 
-exports.singleExitPoint = function (block) {
-  // guarantee that if there is a return, it's directly in the body *or* in a
-  // single-layer if statement.
-  block = exports.flattenReturningIfs(block);
+FlattenedIf.prototype._clearQueue = function () {
+  // adds kept back statements to the main collection, guarded by the
+  // saved test
+  if (this._queue.length) {
+    var block = astutils.blockStatement(this._queue);
+    this._statements.push(astutils.ifStatement(this._guardID, block));
+    this._queue = [];
+  }
+}
 
-  stripAfterReturn(block.body);
-  annihilateReturns(block.body);
+FlattenedIf.prototype.add = function (stmt) {
+  if (stmt.type === 'IfStatement' && containsReturn(stmt.consequent)) {
+    this._clearQueue();
+    // change the inner if statement's test so it includes the outer
+    // statement's test and add it to the main collection of statements.
+    stmt.test = astutils.andOp(this._guardID, stmt.test);
+    if (stmt.alternate) {
+      stmt.alternate = astutils.ifStatement(this._guardID, stmt.alternate);
+    }
+    this._statements.push(stmt);
+  } else {
+    this._queue.push(stmt);
+  }
+}
+
+FlattenedIf.prototype.toAST = function () {
+  // add the remaining kept back statements
+  this._clearQueue();
+  addToElse(this._statements[this._statements.length - 1], this._elseBody);
+  // and bundle everything in a block
+  return astutils.blockStatement(this._statements);
+}
+
+function addToElse(node, body) {
+  var elseStmts = [];
+  if (node.alternate) {
+    if (node.alternate.type === 'BlockStatement') {
+      elseStmts = node.alternate.body;
+    } else {
+      elseStmts.push(node.alternate);
+    }
+  }
+  elseStmts.push.apply(elseStmts, body);
+  if (elseStmts.length) {
+    node.alternate = astutils.blockStatement(elseStmts);
+  }
+}
+
+exports.directlyExitable = function (block) {
+  // makes sure that every return will directly exit the function, even when in
+  // a promise chain. It does this by placing everything after a return in an if
+  // statement in an else clause, after flattening the if statement structure
+  // first.
+  //
+  // TODO: think on try/catch! Are they supported already, or are there edge
+  // cases?
+
+  block = exports.flattenReturningIfs(block);
+  block = elsifyReturn(block);
 
   return block;
 }
 
+function elsifyReturn(block) {
+  stripAfterReturn(block.body);
+
+  for (var i = 0; i < block.body.length; i++) {
+    var node = block.body[i];
+
+    if (node.type === 'IfStatement' && containsReturn(node.consequent)) {
+      stripAfterReturn(node.consequent.body);
+
+      addToElse(node, block.body.splice(i + 1));
+      if (node.alternate) {
+        elsifyReturn(node.alternate);
+      }
+
+      // optimalization:
+      // if the result is of the form if (a) {} else {/* statements */}, invert
+      // the test and swap the bodies.
+      if (!node.consequent.body.length) {
+        node.consequent = node.alternate;
+        node.alternate = null;
+        node.test = {
+          type: 'UnaryExpression',
+          operator: '!',
+          argument: node.test
+        };
+      }
+    }
+  }
+  return block;
+}
+
 function stripAfterReturn(body) {
-  // returns the 'return' AST node (if one)
   for (var i = 0; i < body.length; i++) {
     var node = body[i];
     if (node.type === 'ReturnStatement') {
-      body.splice(i + 1);
-      return node;
-    }
-  }
-}
-
-function annihilateReturns(body) {
-  for (var i = 0; i < body.length; i++) {
-    var node = body[i];
-    if (node.type !== 'IfStatement') {
-      continue;
-    }
-    var retNode = stripAfterReturn(node.consequent.body);
-    if (!retNode) {
-      continue;
-    }
-    // at this point, ``node`` is an if statement of which the consequent body
-    // has as its last statement ``retNode``.
-    if (retNode.argument) {
-      // TODO
-    } else {
-      // remove return statement
-      node.consequent.body.splice(-1);
-    }
-    // move everything after the if statement into the else clause (prepending
-    // any existing else clause statements)
-    var existingElseBody = (node.alternate || {}).body || [];
-    var elseBody = existingElseBody.concat(body.splice(i + 1));
-    if (elseBody.length) {
-      node.alternate = astutils.blockStatement(elseBody);
-      annihilateReturns(node.alternate.body);
-    }
-
-    // if the result is of the form if (a) {} else {/* statements */}, invert
-    // the test and swap the bodies.
-    if (!node.consequent.body.length) {
-      node.consequent = node.alternate;
-      node.alternate = null;
-      node.test = {
-        type: 'UnaryExpression',
-        operator: '!',
-        argument: node.test
-      }
+      // only strip the return itself if it doesn't have an argument
+      body.splice(i + !!node.argument);
     }
   }
 }
@@ -402,16 +424,18 @@ exports.wrapIfStatements = function (block) {
   // }()
   return astutils.replaceSkippingFuncs(block, function (node) {
     if (node.type === 'IfStatement' && !node.safed) {
-      if (astutils.containsAwait(node.consequent)) {
+      var consequentHasAwait = astutils.containsAwait(node.consequent);
+      var alternateHasAwait = astutils.containsAwait(node.alternate);
+      if (consequentHasAwait) {
         node.consequent = wrapIfBranch(node.consequent);
-      } else if (astutils.containsAwait(node.alternate)) {
-        node.alternate = wrapIfBranch(node.alternate);
-      } else {
-        // no await
-        return;
       }
-      node.safed = true;
-      return awaitStatement(wrapFunction([node]), []);
+      if (alternateHasAwait) {
+        node.alternate = wrapIfBranch(node.alternate);
+      }
+      if (consequentHasAwait || alternateHasAwait) {
+        node.safed = true;
+        return awaitStatement(wrapFunction([node]), []);
+      }
     }
   });
 }
