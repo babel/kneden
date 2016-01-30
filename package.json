@@ -1,0 +1,46 @@
+{
+  "version": "0.0.0",
+  "description": " Transpile ES7 async/await to vanilla ES6 Promise chains",
+  "repository": "marten-de-vries/babel-plugin-kneden",
+  "author": "Marten de Vries",
+  "main": "lib/index.js",
+  "devDependencies": {
+    "babel-cli": "^6.4.5",
+    "babel-core": "^6.3.17",
+    "babel-eslint": "^4.1.6",
+    "babel-istanbul": "^0.6.0",
+    "babel-preset-es2015": "^6.3.13",
+    "babel-register": "^6.4.3",
+    "eslint": "^1.10.3",
+    "mocha": "^2.2.5"
+  },
+  "scripts": {
+    "clean": "rm -rf lib",
+    "build": "babel src -d lib",
+    "test": "npm run test:lint && npm run test:cov",
+    "test:cov": "babel-node node_modules/.bin/babel-istanbul cover _mocha",
+    "test:js": "mocha --compilers js:babel-register",
+    "test:lint": "eslint src/*.js test/index.js && eslint test/fixtures/*/*.js",
+    "test:watch": "npm run test -- --watch",
+    "prepublish": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "es",
+    "7",
+    "6",
+    "babel",
+    "promise",
+    "async",
+    "await",
+    "promises",
+    "function",
+    "functions",
+    "plugin",
+    "babel-plugin"
+  ],
+  "dependencies": {
+    "babel-helper-hoist-variables": "^6.3.13",
+    "babel-types": "^6.4.5",
+    "js-extend": "^1.0.1"
+  }
+}
