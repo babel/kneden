@@ -21,7 +21,7 @@
     "test:cov": "babel-node node_modules/.bin/babel-istanbul cover _mocha",
     "test:js": "mocha --compilers js:babel-register",
     "test:lint": "eslint src/*.js test/index.js && eslint test/fixtures/*/*.js",
-    "test:watch": "npm run test -- --watch",
+    "test:watch": "npm run test:js -- --watch",
     "prepublish": "npm run clean && npm run build"
   },
   "keywords": [

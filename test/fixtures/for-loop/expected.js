@@ -1,20 +1,19 @@
-var PouchDB = require('pouchdb');
-
+var request = require('request-promise');
 function test() {
-  var db;
+  var pages, i;
   return Promise.resolve().then(function () {
-    db = new PouchDB('test');
+    pages = [];
+    i = 0;
     return function _recursive() {
       if (i < 10) {
         return Promise.resolve().then(function () {
+          return request('https://example.com/page' + i);
+        }).then(function (_resp) {
+          pages.push(_resp);
           i++;
-          return db.put({ _id: i });
-        }).then(function () {
           return _recursive();
         });
       }
     }();
-  }).then(function () {
-    return db.allDocs();
-  });
+  }).then(function () {});
 }

@@ -1,4 +1,5 @@
 var PouchDB = require('pouchdb');
+
 async function test() {
   var db = new PouchDB('test');
   while (i < 10) {
