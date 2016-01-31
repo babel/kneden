@@ -13,7 +13,7 @@ import {
   variableDeclarator
 } from 'babel-types';
 
-import RefactorVisitor from './refactor';
+import {RefactorVisitor, IfRefactorVisitor} from './refactor';
 import PromiseChain from './promisechain';
 
 export default () => ({
@@ -31,14 +31,9 @@ const MainVisitor = {
       depth++;
       const {node} = path;
       if (node.async) {
-        // hoist variables
-        const vars = [];
-        hoistVariables(path, id => vars.push(id));
-        const newBody = [];
-        if (vars.length) {
-          const declarators = vars.map(id => variableDeclarator(id));
-          newBody.push(variableDeclaration("var", declarators));
-        }
+        const decls = [];
+        const addVarDecl = id => decls.push(variableDeclarator(id));
+        hoistVariables(path, addVarDecl);
 
         // info gathering for this/arguments during the refactoring
         const thisID = identifier(path.scope.generateUid('this'));
@@ -46,10 +41,10 @@ const MainVisitor = {
         const used = {thisID: false, argumentsID: false};
 
         // refactor code
-        path.traverse(RefactorVisitor, {thisID, argumentsID, used});
-
+        path.traverse(RefactorVisitor, {thisID, argumentsID, used, addVarDecl});
+        // hoist variables
+        const newBody = [];
         // add this/arguments vars if necessary
-        const decls = [];
         if (used.thisID) {
           decls.push(variableDeclarator(thisID, thisExpression()));
         }
@@ -59,6 +54,9 @@ const MainVisitor = {
         if (decls.length) {
           newBody.push(variableDeclaration('var', decls));
         }
+
+        // transformations that can only be done after all others.
+        path.traverse(IfRefactorVisitor);
 
         // build the promise chain
         const chain = new PromiseChain(depth > 1, node.dirtyAllowed);

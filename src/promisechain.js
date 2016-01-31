@@ -4,12 +4,11 @@ import {
   functionExpression,
   identifier,
   isExpressionStatement,
-  isTryStatement,
   memberExpression,
   returnStatement
 } from 'babel-types';
 import {extend} from 'js-extend';
-import {containsAwait, NoSubFunctionsVisitor} from './utils';
+import {NoSubFunctionsVisitor} from './utils';
 
 export default class PromiseChain {
   constructor(inner, dirtyAllowed) {
@@ -35,9 +34,9 @@ export default class PromiseChain {
       this.nextLink.body.push(path.node);
     }
   }
-  addNextLink() {
+  addNextLink(force) {
     const dirtyNecessity = !this._dirtyAllowed && this.nextLink.dirty;
-    if (dirtyNecessity || this.nextLink.body.length) {
+    if (force || dirtyNecessity || this.nextLink.body.length) {
       const handlerBody = blockStatement(this.nextLink.body);
       const handler = functionExpression(null, this.nextLink.params, handlerBody);
       const method = memberExpression(this._ast, identifier(this.nextLink.type));

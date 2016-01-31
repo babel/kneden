@@ -10,7 +10,9 @@ import {
   identifier,
   ifStatement,
   isAwaitExpression,
+  isIfStatement,
   isReturnStatement,
+  logicalExpression,
   memberExpression,
   returnStatement,
   variableDeclaration,
@@ -19,10 +21,10 @@ import {
 } from 'babel-types';
 
 import PromiseChain from './promisechain';
-import {NoSubFunctionsVisitor, awaitStatement, containsAwait} from './utils';
+import {NoSubFunctionsVisitor} from './utils';
 import {extend} from 'js-extend';
 
-export default extend({
+export const RefactorVisitor = extend({
   AwaitExpression(path) {
     // ``return await x`` becomes just ``return x``
     if (isReturnStatement(path.parent)) {
@@ -30,25 +32,42 @@ export default extend({
     }
   },
   TryStatement(path) {
+    // TODO: handle returns! And debug, rewrite, etc. This is messy...
+
     // changes a try/catch that contains an await in a promise chain that uses
     // .catch()
     if (containsAwait(path)) {
+      // make a subchain of the 'try' part
       const subChain = new PromiseChain(true, true);
       path.get('block.body').forEach(subPath => subChain.add(subPath));
-      subChain.addNextLink();
-      subChain.nextLink.type = 'catch';
-      subChain.nextLink.params = [path.node.handler.param];
-      const catchChain = new PromiseChain(true, true);
-      path.get('handler.body.body').forEach(subPath => catchChain.add(subPath));
-      const catchAST = catchChain.toAST();
-      // insert into the main AST - it's not used at this position, but we
-      // need a 'path' for the subChain.add() call.
-      path.node.handler.body.body = [awaitStatement(catchAST)];
-      subChain.add(path.get('handler.body.body')[0]);
+      if (path.node.handler) {
+        subChain.addNextLink(true);
+        // add a catch part, which contains its own catchChain (but that one might
+        // be optimized away later on)
+        subChain.nextLink.type = 'catch';
+        const catchChain = new PromiseChain(true, true);
+        subChain.nextLink.params = [path.node.handler.param];
+        path.get('handler.body.body').forEach(subPath => catchChain.add(subPath));
+        const catchAST = catchChain.toAST();
+        // insert catchAST into the main AST - it's not used at this position, but
+        // we need a 'path' for the subChain.add() call.
+        path.node.handler = awaitStatement(catchAST);
+        subChain.add(path.get('handler'));
+      }
+      if (path.node.finalizer) {
+        subChain.addNextLink(true);
+        // add a finally part, consisting of a catch followed by a then
+        subChain.nextLink.type = 'catch';
+        subChain.addNextLink(true);
+        path.get('finalizer.body').forEach(subPath => subChain.add(subPath));
+      }
+      // wrap the subChain, then replace the original try/catch with it.
       path.replaceWith(awaitStatement(subChain.toAST()));
+      // TODO: implement finally
     }
   },
   ConditionalExpression(path) {
+    // TODO: use containsAwait...
     const {node} = path;
     const leftIsAwait = isAwaitExpression(path.node.consequent);
     const rightIsAwait = isAwaitExpression(path.node.alternate);
@@ -63,25 +82,108 @@ export default extend({
     }
   },
   IfStatement(path) {
-    const ifContainsAwait = containsAwait(path.get('consequent'));
-    const elseContainsAwait = containsAwait(path.get('alternate'));
-
     const {node} = path;
-    if (ifContainsAwait) {
-      node.consequent = wrapIfBranch(node.consequent);
+    if (node.consequent.body.some(isIfStatement) && containsReturnOrAwait(path)) {
+      // flatten if statements. There are two ways to reach d() in the below.
+      // if a() && !b(), and if !a() && !b(). That's problematic during the
+      // promise conversion.
+      //
+      // if (a()) {
+      //   if (b()) {
+      //     return c();
+      //   }
+      // }
+      // return d();
+      //
+      // this becomes instead:
+      //
+      // var _test = a();
+      // if (_test && b()) {
+      //   return c();
+      // }
+      // return d();
+      //
+      // which is better, but not quite the result we want yet. See for that
+      // the exit handler of BlockStatement
+
+      const testID = identifier(path.scope.generateUid('test'));
+      this.addVarDecl(testID);
+      const block = [expressionStatement(assignmentExpression('=', testID, node.test))];
+
+      let stillToAdd = [];
+      const clearQueue = () => {
+        if (stillToAdd.length) {
+          block.push(ifStatement(testID, blockStatement(stillToAdd)));
+          stillToAdd = [];
+        }
+      }
+      node.consequent.body.forEach(stmt => {
+        if (isIfStatement(stmt)) {
+          clearQueue();
+          stmt.test = logicalExpression('&&', testID, stmt.test);
+          if (stmt.alternate) {
+            stmt.alternate = blockStatement([ifStatement(testID, stmt.alternate)]);
+          }
+          block.push(stmt);
+        } else {
+          stillToAdd.push(stmt);
+        }
+      });
+      clearQueue();
+      extendElse(block[block.length - 1], (node.alternate || {}).body || []);
+      path.replaceWithMultiple(block);
     }
-    if (elseContainsAwait) {
-      node.alternate = wrapIfBranch(node.alternate);
-    }
-    if (ifContainsAwait || elseContainsAwait) {
-      path.replaceWith(awaitExpression(wrapFunction(blockStatement([node]))));
+  },
+  BlockStatement: {
+    exit(path) {
+      // Converts
+      //
+      // var _test = a();
+      // if (_test && b()) {
+      //   return c();
+      // }
+      // return d();
+      //
+      // into:
+      //
+      // var _test = a();
+      // if (_test && b()) {
+      //   return c();
+      // } else {
+      //   return d();
+      // }
+      //
+      // ... which has at every point in time only two choices: returning
+      // directly out of the function, or continueing on. That's what's required
+      // for a nice conversion to Promise chains.
+      for (var i = 0; i < path.node.body.length; i++) {
+        const subNode = path.node.body[i];
+        if (isReturnStatement(subNode)) {
+          // remove everything in the block after the return - it's never going
+          // to be executed anyway.
+          path.node.body.splice(i + 1);
+        }
+        if (!isIfStatement(subNode)) {
+          continue;
+        }
+        const lastStmt = subNode.consequent.body[subNode.consequent.body.length - 1];
+        if (!isReturnStatement(lastStmt)) {
+          continue;
+        }
+        const remainder = path.node.body.splice(i + 1);
+        if (!lastStmt.argument) {
+          // chop off the soon to be useless return statement
+          subNode.consequent.body.splice(-1);
+        }
+        extendElse(subNode, remainder);
+      }
     }
   },
   LogicalExpression(path) {
+    // TODO: use containsAwait!!!
     if (isAwaitExpression(path.node.right)) {
       // a && (await b) becomes:
       // await (await a && b());
-      // }()
       path.node.right = path.node.right.argument;
       path.replaceWith(awaitExpression(path.node));
     }
@@ -259,6 +361,8 @@ function refactorLoop(path, extraCheck, handler) {
 const BreakContinueReplacementVisitor = extend({
   // replace continue/break with their recursive equivalents
   BreakStatement(path) {
+    // FIXME: no way to compare it to a real return. Those don't work anyway at
+    // the moment.
     path.replaceWith(returnStatement());
   },
   ContinueStatement(path) {
@@ -266,17 +370,59 @@ const BreakContinueReplacementVisitor = extend({
   }
 }, NoSubFunctionsVisitor);
 
-function continueStatementEquiv(functionID) {
-  const call = awaitExpression(callExpression(functionID, []));
-  return returnStatement(call);
-}
+const continueStatementEquiv =
+  funcID => returnStatement(awaitExpression(callExpression(funcID, [])));
 
-function wrapIfBranch(node) {
-  return blockStatement([returnStatement(wrapFunction(node))]);
-}
+const wrapIfBranch =
+  branch => blockStatement([returnStatement(wrapFunction(branch))]);
 
 function wrapFunction(body) {
   const func = functionExpression(null, [], body, false, true);
   func.dirtyAllowed = true;
   return callExpression(func, []);
 }
+
+const containsReturnOrAwait = matcher(['ReturnStatement', 'AwaitExpression']);
+const containsAwait = matcher(['AwaitExpression']);
+
+function matcher(types) {
+  const MatchVisitor = extend({}, NoSubFunctionsVisitor);
+  types.forEach(type => {
+    MatchVisitor[type] = function (path) {
+      this.match.found = true;
+      path.stop();
+    };
+  });
+  return function (path) {
+    const match = {}
+    path.traverse(MatchVisitor, {match});
+    return match.found;
+  }
+}
+
+const awaitStatement = arg => expressionStatement(awaitExpression(arg));
+
+function extendElse(ifStmt, extraBody) {
+  const body = ((ifStmt.alternate || {}).body || []).concat(extraBody);
+  if (body.length) {
+    ifStmt.alternate = blockStatement(body);
+  }
+}
+
+export const IfRefactorVisitor = extend({
+  IfStatement(path) {
+    const ifContainsAwait = containsAwait(path.get('consequent'));
+    const elseContainsAwait = containsAwait(path.get('alternate'));
+
+    const {node} = path;
+    if (ifContainsAwait) {
+      node.consequent = wrapIfBranch(node.consequent);
+    }
+    if (elseContainsAwait) {
+      node.alternate = wrapIfBranch(node.alternate);
+    }
+    if (ifContainsAwait || elseContainsAwait) {
+      path.replaceWith(awaitExpression(wrapFunction(blockStatement([node]))));
+    }
+  }
+}, NoSubFunctionsVisitor)

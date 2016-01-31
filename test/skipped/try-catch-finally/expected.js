@@ -6,8 +6,8 @@ function test() {
       return Promise.resolve().then(function () {
         console.log(err);
         return db.post({});
-      }).then(function (pResp) {
-        console.log(pResp);
+      }).then(function (_resp) {
+        console.log(_resp);
       });
     }).then(function () {
       return Promise.resolve().then(function () {
@@ -20,6 +20,5 @@ function test() {
         throw pErr;
       });
     });
-  }).then(function () {
-  });
+  }).then(function () {});
 }
