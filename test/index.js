@@ -17,7 +17,7 @@ describe('Transpile ES7 async/await to vanilla ES6 Promise chains', () => {
     if (!fs.statSync(fixtureDir).isDirectory()) {
       return;
     }
-    it(`should ${caseName.split('-').join(' ')}`, () => {
+    it(caseName.split('-').join(' '), () => {
       const actual = transformFileSync(actualPath).code;
 
       const expected = fs.readFileSync(

@@ -1,28 +1,32 @@
+// TODO: move everything related to 'if' to a separate file, just like the loops
+
 import {
-  arrayExpression,
   assignmentExpression,
   awaitExpression,
+  binaryExpression,
   blockStatement,
-  callExpression,
+  booleanLiteral,
+  ensureBlock,
   expressionStatement,
-  forInStatement,
-  functionExpression,
   identifier,
   ifStatement,
   isIfStatement,
   isReturnStatement,
   logicalExpression,
-  memberExpression,
   returnStatement,
-  unaryExpression,
-  variableDeclaration,
-  variableDeclarator,
-  whileStatement
+  unaryExpression
 } from 'babel-types';
+import {extend} from 'js-extend';
 
 import PromiseChain from './promisechain';
-import {NoSubFunctionsVisitor} from './utils';
-import {extend} from 'js-extend';
+import {
+  awaitStatement,
+  containsAwait,
+  matcher,
+  NoSubFunctionsVisitor,
+  wrapFunction
+} from './utils';
+import PartialLoopRefactorVisitor from './looprefactor';
 
 export const RefactorVisitor = extend({
   AwaitExpression(path) {
@@ -38,14 +42,14 @@ export const RefactorVisitor = extend({
     // .catch()
     if (containsAwait(path)) {
       // make a subchain of the 'try' part
-      const subChain = new PromiseChain(true, true);
+      const subChain = new PromiseChain(true, true, this.respID);
       path.get('block.body').forEach(subPath => subChain.add(subPath));
       if (path.node.handler) {
         subChain.addNextLink(true);
         // add a catch part, which contains its own catchChain (but that one might
         // be optimized away later on)
         subChain.nextLink.type = 'catch';
-        const catchChain = new PromiseChain(true, true);
+        const catchChain = new PromiseChain(true, true, this.respID);
         subChain.nextLink.params = [path.node.handler.param];
         path.get('handler.body.body').forEach(subPath => catchChain.add(subPath));
         const catchAST = catchChain.toAST();
@@ -82,6 +86,10 @@ export const RefactorVisitor = extend({
   },
   IfStatement(path) {
     const {node} = path;
+    ensureBlock(node, 'consequent');
+    if (node.alternate) {
+      ensureBlock(node, 'alternate');
+    }
     if (node.consequent.body.some(isIfStatement) && containsReturnOrAwait(path)) {
       // flatten if statements. There are two ways to reach d() in the below.
       // if a() && !b(), and if !a() && !b(). That's problematic during the
@@ -206,125 +214,6 @@ export const RefactorVisitor = extend({
       path.replaceWith(awaitExpression(wrapFunction(blockStatement(body))));
     }
   },
-  DoWhileStatement(path) {
-    // converts
-    //
-    // do {
-    //   newBody;
-    // } while (node.test)
-    //
-    // into:
-    //
-    // await async function _recursive() {
-    //   newBody;
-    //   if (node.test) {
-    //     return await _recursive();
-    //   }
-    // }()
-
-    refactorLoop(path, false, functionID => {
-      const continueBlock = blockStatement([continueStatementEquiv(functionID)])
-      path.node.body.body.push(ifStatement(path.node.test, continueBlock));
-      path.replaceWith(recursiveWrapFunction(functionID, path.node.body));
-    });
-  },
-  WhileStatement(path) {
-    // converts
-    //
-    // while (node.test) {
-    //   newBody;
-    // }
-    //
-    // into:
-    //
-    // await async function _recursive() {
-    //   if (node.test) {
-    //     newBody;
-    //     return await _recursive();
-    //   }
-    // }()
-
-    refactorLoop(path, false, functionID => {
-      path.node.body.body.push(continueStatementEquiv(functionID));
-      const body = blockStatement([ifStatement(path.node.test, path.node.body)]);
-
-      path.replaceWith(recursiveWrapFunction(functionID, body));
-    });
-  },
-  ForStatement(path) {
-    // converts
-    //
-    // for(node.init, node.test, node.update) {
-    //   newBody;
-    // }
-    //
-    // into:
-    //
-    // {
-    //   node.init;
-    //   await async function _recursive() {
-    //     if (node.test) {
-    //       newBody;
-    //       node.update;
-    //       return await _recursive();
-    //     }
-    //   }()
-    // }
-    ifShouldRefactorLoop(path, containsAwait(path.get('update')), () => {
-      path.node.body.body.push(expressionStatement(path.node.update));
-      path.replaceWithMultiple([
-        expressionStatement(path.node.init),
-        whileStatement(path.node.test, path.node.body)
-      ]);
-    });
-  },
-  ForInStatement(path) {
-    // converts
-    // for (node.left in node.right) {
-    //   newBody;
-    // }
-    //
-    // info:
-    //
-    // var _items = [];
-    // for (var _item in node.right) {
-    //   _items.push(_item);
-    // }
-    // _items.reverse();
-    // await async function _recursive() {
-    //   if (_items.length) {
-    //     node.left = _items.pop();
-    //     newBody;
-    //     return await _recursive();
-    //   }
-    // }
-
-    ifShouldRefactorLoop(path, false, () => {
-      // convert for loop body to while loop body
-      const itemsID = identifier(path.scope.generateUid('items'));
-      const popID = memberExpression(itemsID, identifier('pop'));
-      const popCall = callExpression(popID, []);
-      const assignment = assignmentExpression('=', path.node.left, popCall);
-      path.node.body.body.unshift(expressionStatement(assignment));
-
-      // convert to while loop with some stuff before it
-      const pushID = memberExpression(itemsID, identifier('push'));
-      const itemID = identifier(path.scope.generateUid('item'));
-      const reverseID = memberExpression(itemsID, identifier('reverse'));
-      const lengthID = memberExpression(itemsID, identifier('length'));
-
-      path.replaceWithMultiple([
-        variableDeclaration('var', [variableDeclarator(itemsID, arrayExpression([]))]),
-        forInStatement(
-          variableDeclaration('var', [variableDeclarator(itemID)]),
-          path.node.right,
-          blockStatement([expressionStatement(callExpression(pushID, [itemID]))])
-        ),
-        expressionStatement(callExpression(reverseID, [])),
-        whileStatement(lengthID, path.node.body)
-      ]);
-    });
-  },
   ThisExpression(path) {
     path.replaceWith(this.thisID);
     this.used.thisID = true;
@@ -334,79 +223,82 @@ export const RefactorVisitor = extend({
       path.replaceWith(this.argumentsID);
       this.used.argumentsID = true;
     }
-  }
-}, NoSubFunctionsVisitor);
-
-function recursiveWrapFunction(functionID, body) {
-  const func = wrapFunction(body);
-  func.callee.id = functionID;
-
-  return awaitStatement(func);
-}
-
-function ifShouldRefactorLoop(path, extraCheck, handler) {
-  if (extraCheck || containsAwait(path.get('body'))) {
-    handler();
-  }
-}
-
-function refactorLoop(path, extraCheck, handler) {
-  ifShouldRefactorLoop(path, extraCheck, () => {
-    const functionID = identifier(path.scope.generateUid('recursive'));
-    path.get('body').traverse(BreakContinueReplacementVisitor, {functionID});
-    handler(functionID);
-  });
-}
-
-const BreakContinueReplacementVisitor = extend({
-  // replace continue/break with their recursive equivalents
-  BreakStatement(path) {
-    // FIXME: no way to compare it to a real return. Those don't work anyway at
-    // the moment.
-    path.replaceWith(returnStatement());
   },
-  ContinueStatement(path) {
-    path.replaceWith(continueStatementEquiv(this.functionID));
+  SwitchStatement(path) {
+    // converts a switch statement in a bunch of if statements that compare the
+    // discriminant to each test. Falling through is handled by a 'match'
+    // variable, and the break statement is handled by a variable 'brokenOut'.
+    // Cases after the default case are repeated so the default case can fall
+    // through (but in such a way that they won't match again if the default
+    // isn't falling through)
+
+    const discrID = identifier(path.scope.generateUid('discriminant'));
+    const matchID = identifier(path.scope.generateUid('match'));
+    const brokenID = identifier(path.scope.generateUid('brokenOut'));
+    this.addVarDecl(discrID);
+    this.addVarDecl(matchID);
+    this.addVarDecl(brokenID);
+
+    // replace break statements with assignment expressions
+    path.traverse(SwitchBreakReplacementVisitor, {brokenID});
+
+    const stmts = [];
+    const notBroken = unaryExpression('!', brokenID);
+    let defaultIdx;
+    path.node.cases.forEach((caseNode, i) => {
+      // add normal checks
+      if (!caseNode.test) {
+        defaultIdx = i;
+        return;
+      }
+
+      const isOwnMatch = binaryExpression('===', discrID, caseNode.test);
+      const isMatch = logicalExpression('||', matchID, isOwnMatch);
+      const test = logicalExpression('&&', notBroken, isMatch);
+      const matchAssign = assignmentExpression('=', matchID, booleanLiteral(true));
+      stmts.push(ifStatement(test, blockStatement(caseNode.consequent.concat([
+        expressionStatement(matchAssign)
+      ]))));
+    });
+
+    if (typeof defaultIdx !== 'undefined') {
+      // add default case
+      const notMatch = unaryExpression('!', matchID);
+      const defaultTest = logicalExpression('&&', notBroken, notMatch);
+      const body = path.node.cases[defaultIdx].consequent;
+      path.node.cases.slice(defaultIdx + 1).forEach(caseNode => {
+        // add fall through cases after default - still guarded by the default
+        // check
+        body.push(ifStatement(notBroken, blockStatement(caseNode.consequent)));
+      });
+      stmts.push(ifStatement(defaultTest, blockStatement(body)));
+    }
+
+    path.replaceWithMultiple([
+      expressionStatement(assignmentExpression('=', discrID, path.node.discriminant)),
+      expressionStatement(assignmentExpression('=', matchID, booleanLiteral(false))),
+      expressionStatement(assignmentExpression('=', brokenID, booleanLiteral(false)))
+    ].concat(stmts));
   }
 }, NoSubFunctionsVisitor);
 
-const continueStatementEquiv =
-  funcID => returnStatement(awaitExpression(callExpression(funcID, [])));
+const SwitchBreakReplacementVisitor = extend({
+  BreakStatement(path) {
+    // TODO: don't execute any code after the break assignment
+    const assignment = assignmentExpression('=', this.brokenID, booleanLiteral(true));
+    path.replaceWith(expressionStatement(assignment));
+  }
+  // TODO: don't touch sub switch statements. Enabling the following should be a
+  // start.
+  //SwitchStatement(path) {
+  //  path.skip();
+  //}
+}, NoSubFunctionsVisitor);
 
 const wrapIfBranch =
   branch => blockStatement([returnStatement(wrapFunction(branch))]);
 
-function wrapFunction(body) {
-  const func = functionExpression(null, [], body, false, true);
-  func.dirtyAllowed = true;
-  return callExpression(func, []);
-}
-
 const containsReturnOrAwait = matcher(['ReturnStatement', 'AwaitExpression']);
-const containsAwait = matcher(['AwaitExpression']);
-
-function matcher(types) {
-  const MatchVisitor = extend({}, NoSubFunctionsVisitor);
-  types.forEach(type => {
-    MatchVisitor[type] = function (path) {
-      this.match.found = true;
-      path.stop();
-    };
-  });
-  return function (path) {
-    if (!path.node) {
-      return false;
-    }
-    if (types.indexOf(path.node.type) !== -1) {
-      return true;
-    }
-    const match = {}
-    path.traverse(MatchVisitor, {match});
-    return match.found;
-  }
-}
-
-const awaitStatement = arg => expressionStatement(awaitExpression(arg));
 
 function extendElse(ifStmt, extraBody) {
   const body = ((ifStmt.alternate || {}).body || []).concat(extraBody);
@@ -439,4 +331,4 @@ export const IfRefactorVisitor = extend({
       path.replaceWith(awaitExpression(wrapFunction(blockStatement([node]))));
     }
   }
-}, NoSubFunctionsVisitor)
+}, PartialLoopRefactorVisitor, NoSubFunctionsVisitor)

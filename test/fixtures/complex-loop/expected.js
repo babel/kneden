@@ -14,8 +14,8 @@ function test() {
       return Promise.resolve().then(function () {
         return _test && Promise.resolve().then(function () {
           return db.put({ _id: i });
-        }).then(function (_resp2) {
-          return _resp2.ok;
+        }).then(function (_resp) {
+          return _resp.ok;
         });
       }).then(function (_resp) {
         if (_resp) {
@@ -25,8 +25,8 @@ function test() {
             if (_test) {
               return Promise.resolve().then(function () {
                 return db.destroy();
-              }).then(function (_resp3) {
-                a = _resp3;
+              }).then(function (_resp) {
+                a = _resp;
                 return _recursive();
               });
             }

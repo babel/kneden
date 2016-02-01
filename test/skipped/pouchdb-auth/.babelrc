@@ -1,6 +1,4 @@
 {
   "presets": ["es2015"],
-  "plugins": [
-    ["../../../src"]
-  ]
+  "plugins": ["../../../src"]
 }

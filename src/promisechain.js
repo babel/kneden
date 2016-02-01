@@ -11,22 +11,23 @@ import {extend} from 'js-extend';
 import {NoSubFunctionsVisitor} from './utils';
 
 export default class PromiseChain {
-  constructor(inner, dirtyAllowed) {
+  constructor(inner, dirtyAllowed, respName) {
     this._inner = inner;
     this._dirtyAllowed = dirtyAllowed;
+    this._respID = identifier(respName);
     this._ast = callExpression(memberExpression(identifier('Promise'), identifier('resolve')), []);
     this._reset();
   }
   add(path) {
     var add = this.add.bind(this);
     const awaitInfos = [];
-    path.traverse(PromisifyPrepVisitor, {awaitInfos, add, respId: this._respId});
+    path.traverse(PromisifyPrepVisitor, {awaitInfos, add, respID: this._respID});
 
     awaitInfos.forEach(awaitInfo => {
       this.nextLink.body.push(returnStatement(awaitInfo.arg));
       this.addNextLink();
-      if (awaitInfo.id) {
-        this.nextLink.params = [awaitInfo.id];
+      if (awaitInfo.passID) {
+        this.nextLink.params = [this._respID];
       }
       this.nextLink.dirty = true;
     });
@@ -73,14 +74,12 @@ const PromisifyPrepVisitor = extend({
     exit(path) {
       // exit so awaits are evaluated inside out if there are multiple in
       // the expression
-      const info = {
-        arg: path.node.argument
-      };
+      const info = {arg: path.node.argument};
       if (isExpressionStatement(path.parent)) {
         path.remove();
       } else {
-        info.id = identifier(path.scope.generateUid('resp'));
-        path.replaceWith(info.id);
+        info.passID = true;
+        path.replaceWith(this.respID);
       }
       this.awaitInfos.push(info);
     }

@@ -2,6 +2,7 @@ import hoistVariables from 'babel-helper-hoist-variables';
 
 import {
   blockStatement,
+  ensureBlock,
   identifier,
   isBlockStatement,
   isCallExpression,
@@ -25,10 +26,12 @@ export default () => ({
 });
 
 let depth = 0;
+let respIDs = [];
 
 const MainVisitor = {
   Function: {
     enter(path) {
+      ensureBlock(path.node);
       depth++;
       const {node} = path;
       if (node.async) {
@@ -41,8 +44,13 @@ const MainVisitor = {
         const argumentsID = identifier(path.scope.generateUid('arguments'));
         const used = {thisID: false, argumentsID: false};
 
+        // determine a suitable value for the '_resp' variable
+        if (path.scope.hasOwnBinding(respIDs[respIDs.length - 1])) {
+          respIDs.push(path.scope.generateUid('resp'));
+        }
+        const respID = respIDs[respIDs.length - 1];
         // refactor code
-        path.traverse(RefactorVisitor, {thisID, argumentsID, used, addVarDecl});
+        path.traverse(RefactorVisitor, {thisID, argumentsID, used, addVarDecl, respID});
         // hoist variables
         const newBody = [];
         // add this/arguments vars if necessary
@@ -60,8 +68,8 @@ const MainVisitor = {
         path.traverse(IfRefactorVisitor);
 
         // build the promise chain
-        const chain = new PromiseChain(depth > 1, node.dirtyAllowed);
-        path.get('body.body').forEach(subPath => {
+        const chain = new PromiseChain(depth > 1, node.dirtyAllowed, respID);
+        path.get('body.body').forEach(subPath => {``
           // TODO: this currenly doesn't happen for try/catch subchains. It
           // should. Fix it, preferably by just making function hoisting an
           // earlier step and removing the logic here. Promise chains are
@@ -79,19 +87,32 @@ const MainVisitor = {
         node.async = false;
       }
     },
-    exit() {
+    exit(path) {
+      if (path.scope.hasOwnBinding(respIDs[respIDs.length - 2])) {
+        respIDs.pop();
+      }
       depth--;
     }
   },
   Program: {
+    enter(path) {
+      respIDs.push(path.scope.generateUid('resp'));
+    },
     exit(path) {
       // inline functions
-      path.traverse(PostProcessingVisitor);
+      path.traverse(InliningVisitor);
     }
   }
 };
 
-const PostProcessingVisitor = {
+const InliningVisitor = {
+  BlockStatement(path) {
+    // inline blocks. Included because babel-template otherwise creates empty
+    // blocks.
+    if (isBlockStatement(path.parent)) {
+      path.replaceWithMultiple(path.node.body);
+    }
+  },
   ReturnStatement(path) {
     // return function () { ...body... }() becomes: ...body...
     const call = path.node.argument;

@@ -7,8 +7,8 @@ function test() {
 
     return d() ? Promise.resolve().then(function () {
       return e();
-    }).then(function (_resp2) {
-      return _resp2.ok;
+    }).then(function (_resp) {
+      return _resp.ok;
     }) : f();
   });
 }
