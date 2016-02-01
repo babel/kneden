@@ -26,7 +26,7 @@ export default () => ({
 });
 
 let depth = 0;
-let respIDs = [];
+let respID;
 
 const MainVisitor = {
   Function: {
@@ -44,11 +44,6 @@ const MainVisitor = {
         const argumentsID = identifier(path.scope.generateUid('arguments'));
         const used = {thisID: false, argumentsID: false};
 
-        // determine a suitable value for the '_resp' variable
-        if (path.scope.hasOwnBinding(respIDs[respIDs.length - 1])) {
-          respIDs.push(path.scope.generateUid('resp'));
-        }
-        const respID = respIDs[respIDs.length - 1];
         // refactor code
         path.traverse(RefactorVisitor, {thisID, argumentsID, used, addVarDecl, respID});
         // hoist variables
@@ -87,16 +82,13 @@ const MainVisitor = {
         node.async = false;
       }
     },
-    exit(path) {
-      if (path.scope.hasOwnBinding(respIDs[respIDs.length - 2])) {
-        respIDs.pop();
-      }
+    exit() {
       depth--;
     }
   },
   Program: {
     enter(path) {
-      respIDs.push(path.scope.generateUid('resp'));
+      respID = path.scope.generateUid('resp');
     },
     exit(path) {
       // inline functions
