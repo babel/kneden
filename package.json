@@ -18,7 +18,7 @@
     "clean": "rm -rf lib",
     "build": "babel src -d lib",
     "test": "npm run test:lint && npm run test:cov",
-    "test:cov": "babel-node node_modules/.bin/babel-istanbul cover _mocha",
+    "test:cov": "babel-node node_modules/.bin/babel-istanbul cover _mocha && babel-istanbul check-coverage --statements 100 --functions 100 --branches 100 --lines 100",
     "test:js": "mocha --compilers js:babel-register",
     "test:lint": "eslint src/*.js test/index.js && eslint test/fixtures/*/*.js",
     "test:watch": "npm run test:js -- --watch",

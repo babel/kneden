@@ -1,4 +1,16 @@
 language: node_js
+
 node_js:
   - "0.10"
   - "stable"
+
+script:
+  - npm run $COMMAND
+
+env:
+  - COMMAND=test:lint
+  - COMMAND=test:cov
+
+notifications:
+  email: false
+

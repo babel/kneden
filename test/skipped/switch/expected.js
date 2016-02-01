@@ -1,38 +1,28 @@
 function test() {
+  var _descriminant, _index;
   return Promise.resolve().then(function () {
-    return function () {
-      var pIdx;
-      return Promise.resolve().then(function () {
-        pIdx = [
-          2,
-          3,
-          4,
-          5
-        ].indexOf(a());
-        if (pIdx !== -1 && pIdx <= 0) {
-          return Promise.resolve().then(function () {
-            return b();
-          });
-        } else {
-          return Promise.resolve().then(function () {
-            if (pIdx !== -1 && pIdx <= 2) {
-              console.log(4);
-            } else {
-              return Promise.resolve().then(function () {
-                if (pIdx <= 2) {
-                  console.log('default');
-                }
-                if (pIdx !== -1 && pIdx <= 3) {
-                  return Promise.resolve().then(function () {
-                    return d();
-                  });
-                }
-              });
-            }
-          });
+    _descriminant = a();
+    _index = _descriminant === 2 ? 0 : (
+      _descriminant === 3 ? 1 : (
+        _descriminant === 4 ? 2 : (
+          _descriminant === 5 ? 3 : -1
+        )
+      )
+    );
+    if (_index !== -1 && _index <= 0) {
+      return b();
+    } else {
+      if (_index !== -1 && _index <= 2) {
+        console.log(4);
+      } else {
+        if (_index <= 2) {
+          console.log('default');
         }
-      });
-    }();
+        if (_index <= 3) {
+          return d();
+        }
+      }
+    }
   }).then(function () {
     console.log('done!');
   });
