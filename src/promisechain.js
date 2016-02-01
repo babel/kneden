@@ -53,11 +53,6 @@ export default class PromiseChain {
   }
   toAST() {
     this.addNextLink();
-    if (this._inner && this._ast.callee.object.name === 'Promise') {
-      // Promise.resolve() is the same as nothing. So return nothing (there's
-      // no nice AST value that could stand in)
-      return callExpression(functionExpression(null, [], blockStatement([])), []);
-    }
     if (this._inner && this._ast.callee.object.callee.object.name === 'Promise') {
       // only one handler to the promise - because we're in an inner function
       // there's no reason to wrap the handler in promise code. Convenienly,

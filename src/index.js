@@ -7,6 +7,7 @@ import {
   isCallExpression,
   isFunctionDeclaration,
   isFunctionExpression,
+  isReturnStatement,
   returnStatement,
   thisExpression,
   variableDeclaration,
@@ -92,6 +93,7 @@ const MainVisitor = {
 
 const PostProcessingVisitor = {
   ReturnStatement(path) {
+    // return function () { ...body... }() becomes: ...body...
     const call = path.node.argument;
     const inlineable = (
       isCallExpression(call) &&
@@ -104,6 +106,22 @@ const PostProcessingVisitor = {
     );
     if (inlineable) {
       path.replaceWithMultiple(call.callee.body.body);
+    }
+  },
+  CallExpression(path) {
+    // function () { return x; }() becomes x
+    const inlineable = (
+      !path.node.arguments.length &&
+      isFunctionExpression(path.node.callee) &&
+      !path.node.callee.id &&
+      !path.node.callee.params.length &&
+      isBlockStatement(path.node.callee.body) &&
+      path.node.callee.body.body.length === 1 &&
+      isReturnStatement(path.node.callee.body.body[0]) &&
+      path.node.callee.body.body[0].argument
+    );
+    if (inlineable) {
+      path.replaceWith(path.node.callee.body.body[0].argument);
     }
   }
 };

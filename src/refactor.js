@@ -9,12 +9,12 @@ import {
   functionExpression,
   identifier,
   ifStatement,
-  isAwaitExpression,
   isIfStatement,
   isReturnStatement,
   logicalExpression,
   memberExpression,
   returnStatement,
+  unaryExpression,
   variableDeclaration,
   variableDeclarator,
   whileStatement
@@ -63,21 +63,20 @@ export const RefactorVisitor = extend({
       }
       // wrap the subChain, then replace the original try/catch with it.
       path.replaceWith(awaitStatement(subChain.toAST()));
-      // TODO: implement finally
+      // TODO: implement finally the right way...
     }
   },
   ConditionalExpression(path) {
-    // TODO: use containsAwait...
     const {node} = path;
-    const leftIsAwait = isAwaitExpression(path.node.consequent);
-    const rightIsAwait = isAwaitExpression(path.node.alternate);
-    if (leftIsAwait) {
-      node.consequent = node.consequent.argument;
+    const leftHasAwait = containsAwait(path.get('consequent'));
+    const rightHasAwait = containsAwait(path.get('alternate'));
+    if (leftHasAwait) {
+      node.consequent = wrapAwaitContaining(node.consequent);
     }
-    if (rightIsAwait) {
-      node.alternate = node.alternate.argument;
+    if (rightHasAwait) {
+      node.alternate = wrapAwaitContaining(node.alternate);
     }
-    if (leftIsAwait || rightIsAwait) {
+    if (leftHasAwait || rightHasAwait) {
       path.replaceWith(awaitExpression(path.node));
     }
   },
@@ -180,11 +179,12 @@ export const RefactorVisitor = extend({
     }
   },
   LogicalExpression(path) {
-    // TODO: use containsAwait!!!
-    if (isAwaitExpression(path.node.right)) {
-      // a && (await b) becomes:
-      // await (await a && b());
-      path.node.right = path.node.right.argument;
+    // a && (await b) becomes:
+    // await a && async function () {
+    //   return await b();
+    // }()
+    if (containsAwait(path.get('right'))) {
+      path.node.right = wrapAwaitContaining(path.node.right);
       path.replaceWith(awaitExpression(path.node));
     }
   },
@@ -394,6 +394,12 @@ function matcher(types) {
     };
   });
   return function (path) {
+    if (!path.node) {
+      return false;
+    }
+    if (types.indexOf(path.node.type) !== -1) {
+      return true;
+    }
     const match = {}
     path.traverse(MatchVisitor, {match});
     return match.found;
@@ -409,8 +415,16 @@ function extendElse(ifStmt, extraBody) {
   }
 }
 
+const wrapAwaitContaining =
+  node => wrapFunction(blockStatement([returnStatement(node)]));
+
 export const IfRefactorVisitor = extend({
   IfStatement(path) {
+    if (!path.node.consequent.body.length && path.node.alternate.body.length) {
+      path.node.consequent = path.node.alternate;
+      path.node.alternate = null;
+      path.node.test = unaryExpression('!', path.node.test);
+    }
     const ifContainsAwait = containsAwait(path.get('consequent'));
     const elseContainsAwait = containsAwait(path.get('alternate'));
 
