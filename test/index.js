@@ -1,4 +1,4 @@
-/* eslint-env node, mocha */
+/* eslint-env mocha */
 
 import path from 'path';
 import fs from 'fs';

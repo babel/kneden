@@ -10,14 +10,12 @@ function test() {
         console.log(_resp);
       });
     }).then(function () {
-      return Promise.resolve().then(function () {
-        return db.info();
-      });
-    }, function (pErr) {
+      return db.info();
+    }, function (_err) {
       return Promise.resolve().then(function () {
         return db.info();
       }).then(function () {
-        throw pErr;
+        throw _err;
       });
     });
   }).then(function () {});

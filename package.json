@@ -1,4 +1,5 @@
 {
+  "name": "kneden",
   "version": "0.0.0",
   "description": " Transpile ES7 async/await to vanilla ES6 Promise chains",
   "repository": "marten-de-vries/babel-plugin-kneden",

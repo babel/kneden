@@ -21,13 +21,13 @@ function test() {
         } else {
           if (_test2) {
             return h();
+          } else {
+            if (_test) {
+              return i();
+            } else {
+              return j();
+            }
           }
-
-          if (_test) {
-            return i();
-          }
-
-          return j();
         }
       });
     }

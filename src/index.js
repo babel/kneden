@@ -2,11 +2,9 @@ import hoistVariables from 'babel-helper-hoist-variables';
 
 import {
   blockStatement,
-  ensureBlock,
   identifier,
   isBlockStatement,
   isCallExpression,
-  isFunctionDeclaration,
   isFunctionExpression,
   isReturnStatement,
   returnStatement,
@@ -18,25 +16,40 @@ import {
 import {RefactorVisitor, IfRefactorVisitor} from './refactor';
 import PromiseChain from './promisechain';
 
-export default () => ({
-  visitor: MainVisitor,
+module.exports = () => ({
+  visitor: WrapperVisitor,
   manipulateOptions(opts, parserOpts) {
     parserOpts.plugins.push('asyncFunctions');
   }
 });
 
 let depth = 0;
-let respID;
+let respID, errID;
+
+const WrapperVisitor = {
+  // Because only ES5 is really supported, force this plugin to run as late as
+  // possible. At least the normal (es2015 preset) transforms have happened by
+  // then.
+  Program: {
+    exit(path) {
+      respID = path.scope.generateUid('resp');
+      errID = path.scope.generateUid('err');
+      path.traverse(MainVisitor);
+      // inline functions
+      path.traverse(InliningVisitor);
+    }
+  }
+};
 
 const MainVisitor = {
   Function: {
     enter(path) {
-      ensureBlock(path.node);
       depth++;
       const {node} = path;
       if (node.async) {
         const decls = [];
         const addVarDecl = id => decls.push(variableDeclarator(id));
+        // hoist variables
         hoistVariables(path, addVarDecl);
 
         // info gathering for this/arguments during the refactoring
@@ -44,10 +57,12 @@ const MainVisitor = {
         const argumentsID = identifier(path.scope.generateUid('arguments'));
         const used = {thisID: false, argumentsID: false};
 
-        // refactor code
-        path.traverse(RefactorVisitor, {thisID, argumentsID, used, addVarDecl, respID});
-        // hoist variables
         const newBody = [];
+        const addFunctionDecl = func => newBody.push(func);
+
+        // refactor code
+        const args = {thisID, argumentsID, used, addVarDecl, addFunctionDecl, respID, errID};
+        path.traverse(RefactorVisitor, args);
         // add this/arguments vars if necessary
         if (used.thisID) {
           decls.push(variableDeclarator(thisID, thisExpression()));
@@ -63,18 +78,9 @@ const MainVisitor = {
         path.traverse(IfRefactorVisitor);
 
         // build the promise chain
-        const chain = new PromiseChain(depth > 1, node.dirtyAllowed, respID);
-        path.get('body.body').forEach(subPath => {``
-          // TODO: this currenly doesn't happen for try/catch subchains. It
-          // should. Fix it, preferably by just making function hoisting an
-          // earlier step and removing the logic here. Promise chains are
-          // complicated enough on their own.
-          if (isFunctionDeclaration(subPath.node)) {
-            newBody.push(subPath.node);
-          } else {
-            chain.add(subPath);
-          }
-        });
+        const chain = new PromiseChain(depth > 1, node.dirtyAllowed, respID, errID);
+        // TODO: hoist function declarations!
+        chain.add(path.get('body.body'));
         newBody.push(returnStatement(chain.toAST()));
 
         // combine all the newly generated stuff.
@@ -84,15 +90,6 @@ const MainVisitor = {
     },
     exit() {
       depth--;
-    }
-  },
-  Program: {
-    enter(path) {
-      respID = path.scope.generateUid('resp');
-    },
-    exit(path) {
-      // inline functions
-      path.traverse(InliningVisitor);
     }
   }
 };

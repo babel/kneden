@@ -7,39 +7,42 @@ function test() {
     _brokenOut = false;
 
     if (!_brokenOut && (_match || _discriminant === 2)) {
-      return b();
-    } else {
       return Promise.resolve().then(function () {
-        if (!_brokenOut && (_match || _discriminant === 3)) {
-          _match = true;
-        }
-
-        if (!_brokenOut && (_match || _discriminant === 4)) {
-          console.log(4);
-          _brokenOut = true;
-          _match = true;
-        }
-
-        if (!_brokenOut && (_match || _discriminant === 5)) {
-          return Promise.resolve().then(function () {
-            return d();
-          }).then(function () {
-            _match = true;
-          });
-        }
+        return b();
       }).then(function () {
-        _test = !_brokenOut && !_match;
-
-        if (_test) {
-          console.log('default');
-        }
-
-        if (_test && !_brokenOut) {
-          return d();
-        }
-      }).then(function () {
-        console.log('done!');
+        // FIXME: handle return
+        return;
       });
     }
-  }).then(function () {});
+  }).then(function () {
+    if (!_brokenOut && (_match || _discriminant === 3)) {
+      _match = true;
+    }
+
+    if (!_brokenOut && (_match || _discriminant === 4)) {
+      console.log(4);
+      _brokenOut = true;
+      _match = true;
+    }
+
+    if (!_brokenOut && (_match || _discriminant === 5)) {
+      return Promise.resolve().then(function () {
+        return d();
+      }).then(function () {
+        _match = true;
+      });
+    }
+  }).then(function () {
+    _test = !_brokenOut && !_match;
+
+    if (_test) {
+      console.log('default');
+    }
+
+    if (_test && !_brokenOut) {
+      return d();
+    }
+  }).then(function () {
+    console.log('done!');
+  });
 }

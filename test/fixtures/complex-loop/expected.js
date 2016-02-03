@@ -21,7 +21,9 @@ function test() {
         if (_resp) {
           return _recursive();
         } else {
-          if (!(_test && i === 2)) {
+          if (_test && i === 2) {
+            return _recursive;
+          } else {
             if (_test) {
               return Promise.resolve().then(function () {
                 return db.destroy();

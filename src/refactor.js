@@ -36,38 +36,18 @@ export const RefactorVisitor = extend({
     }
   },
   TryStatement(path) {
-    // TODO: handle returns! And debug, rewrite, etc. This is messy...
-
     // changes a try/catch that contains an await in a promise chain that uses
     // .catch()
     if (containsAwait(path)) {
-      // make a subchain of the 'try' part
-      const subChain = new PromiseChain(true, true, this.respID);
-      path.get('block.body').forEach(subPath => subChain.add(subPath));
-      if (path.node.handler) {
-        subChain.addNextLink(true);
-        // add a catch part, which contains its own catchChain (but that one might
-        // be optimized away later on)
-        subChain.nextLink.type = 'catch';
-        const catchChain = new PromiseChain(true, true, this.respID);
-        subChain.nextLink.params = [path.node.handler.param];
-        path.get('handler.body.body').forEach(subPath => catchChain.add(subPath));
-        const catchAST = catchChain.toAST();
-        // insert catchAST into the main AST - it's not used at this position, but
-        // we need a 'path' for the subChain.add() call.
-        path.node.handler = awaitStatement(catchAST);
-        subChain.add(path.get('handler'));
+      const subChain = new PromiseChain(true, true, this.respID, this.errID);
+      subChain.add(path.get('block.body'));
+      if(path.node.handler) {
+        subChain.addCatch(path.get('handler.body.body'), path.node.handler.param);
       }
       if (path.node.finalizer) {
-        subChain.addNextLink(true);
-        // add a finally part, consisting of a catch followed by a then
-        subChain.nextLink.type = 'catch';
-        subChain.addNextLink(true);
-        path.get('finalizer.body').forEach(subPath => subChain.add(subPath));
+        subChain.addFinally(path.get('finalizer.body'));
       }
-      // wrap the subChain, then replace the original try/catch with it.
       path.replaceWith(awaitStatement(subChain.toAST()));
-      // TODO: implement finally the right way...
     }
   },
   ConditionalExpression(path) {
@@ -111,7 +91,7 @@ export const RefactorVisitor = extend({
       // return d();
       //
       // which is better, but not quite the result we want yet. See for that
-      // the exit handler of BlockStatement
+      // the BlockStatement handler in the other IfRefactorVisitor below.
 
       const testID = identifier(path.scope.generateUid('test'));
       this.addVarDecl(testID);
@@ -139,51 +119,6 @@ export const RefactorVisitor = extend({
       clearQueue();
       extendElse(block[block.length - 1], (node.alternate || {}).body || []);
       path.replaceWithMultiple(block);
-    }
-  },
-  BlockStatement: {
-    exit(path) {
-      // Converts
-      //
-      // var _test = a();
-      // if (_test && b()) {
-      //   return c();
-      // }
-      // return d();
-      //
-      // into:
-      //
-      // var _test = a();
-      // if (_test && b()) {
-      //   return c();
-      // } else {
-      //   return d();
-      // }
-      //
-      // ... which has at every point in time only two choices: returning
-      // directly out of the function, or continueing on. That's what's required
-      // for a nice conversion to Promise chains.
-      for (var i = 0; i < path.node.body.length; i++) {
-        const subNode = path.node.body[i];
-        if (isReturnStatement(subNode)) {
-          // remove everything in the block after the return - it's never going
-          // to be executed anyway.
-          path.node.body.splice(i + 1);
-        }
-        if (!isIfStatement(subNode)) {
-          continue;
-        }
-        const lastStmt = subNode.consequent.body[subNode.consequent.body.length - 1];
-        if (!isReturnStatement(lastStmt)) {
-          continue;
-        }
-        const remainder = path.node.body.splice(i + 1);
-        if (!lastStmt.argument) {
-          // chop off the soon to be useless return statement
-          subNode.consequent.body.splice(-1);
-        }
-        extendElse(subNode, remainder);
-      }
     }
   },
   LogicalExpression(path) {
@@ -279,6 +214,10 @@ export const RefactorVisitor = extend({
       expressionStatement(assignmentExpression('=', matchID, booleanLiteral(false))),
       expressionStatement(assignmentExpression('=', brokenID, booleanLiteral(false)))
     ].concat(stmts));
+  },
+  FunctionDeclaration(path) {
+    this.addFunctionDecl(path.node);
+    path.remove();
   }
 }, NoSubFunctionsVisitor);
 
@@ -312,7 +251,8 @@ const wrapAwaitContaining =
 
 export const IfRefactorVisitor = extend({
   IfStatement(path) {
-    if (!path.node.consequent.body.length && path.node.alternate.body.length) {
+    const alt = path.node.alternate;
+    if (!path.node.consequent.body.length && alt && alt.body.length) {
       path.node.consequent = path.node.alternate;
       path.node.alternate = null;
       path.node.test = unaryExpression('!', path.node.test);
@@ -329,6 +269,49 @@ export const IfRefactorVisitor = extend({
     }
     if (ifContainsAwait || elseContainsAwait) {
       path.replaceWith(awaitExpression(wrapFunction(blockStatement([node]))));
+    }
+  },
+  BlockStatement(path) {
+    // Converts
+    //
+    // var _test = a();
+    // if (_test && b()) {
+    //   return c();
+    // }
+    // return d();
+    //
+    // into:
+    //
+    // var _test = a();
+    // if (_test && b()) {
+    //   return c();
+    // } else {
+    //   return d();
+    // }
+    //
+    // ... which has at every point in time only two choices: returning
+    // directly out of the function, or continueing on. That's what's required
+    // for a nice conversion to Promise chains.
+    for (var i = 0; i < path.node.body.length; i++) {
+      const subNode = path.node.body[i];
+      if (isReturnStatement(subNode)) {
+        // remove everything in the block after the return - it's never going
+        // to be executed anyway.
+        path.node.body.splice(i + 1);
+      }
+      if (!isIfStatement(subNode)) {
+        continue;
+      }
+      const lastStmt = subNode.consequent.body[subNode.consequent.body.length - 1];
+      if (!isReturnStatement(lastStmt)) {
+        continue;
+      }
+      const remainder = path.node.body.splice(i + 1);
+      if (!lastStmt.argument) {
+        // chop off the soon to be useless return statement
+        subNode.consequent.body.splice(-1);
+      }
+      extendElse(subNode, remainder);
     }
   }
 }, PartialLoopRefactorVisitor, NoSubFunctionsVisitor)
