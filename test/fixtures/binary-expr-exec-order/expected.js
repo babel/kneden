@@ -12,6 +12,7 @@ function test() {
     });
   }).then(function (_resp) {
     if (_resp) {}
+
     _temp2 = a();
     return b();
   }).then(function (_resp) {
