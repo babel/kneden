@@ -9,7 +9,8 @@ Kneden
 
 **WARNING: Kneden is alpha quality software.**
 
-Do you want an ES7 async/await transpiling [Babel](https://babeljs.io/) plugin, that:
+Do you want an ES7 async/await transpiling [Babel](https://babeljs.io/) plugin,
+that:
 
 - produces readable code - even when generator functions are not available?
 - doesn't come with a runtime your users have to download?
@@ -82,10 +83,11 @@ require("babel-core").transform("code", {
 });
 ```
 
-You can also use the plug-in in [Browserify](http://browserify.org/) using [babelify](https://github.com/babel/babelify), in [http://rollupjs.org/](Rollup)
+You can also use the plug-in in [Browserify](http://browserify.org/) using
+[babelify](https://github.com/babel/babelify), in [Rollup](http://rollupjs.org/)
 by using it in conjunction with
 [rollup-plugin-babel](https://github.com/rollup/rollup-plugin-babel), and in
-[Webpack](https://webpack.github.io/) by using it with
+[Webpack](https://webpack.github.io/) using
 [babel-loader](https://github.com/babel/babel-loader).
 
 Unsupported/TODO/Contributing
@@ -93,7 +95,8 @@ Unsupported/TODO/Contributing
 
 - no ``eval()``; but that's true for other Babel plugins/presets as well.
 - Return statements aren't properly supported in loops, switch and try/catch/
-  finally statements yet (#13)
+  finally statements yet
+  ([#13](https://github.com/marten-de-vries/kneden/issues/13))
 - testing and bug fixing
 
 Contributions welcome! Just open an issue or PR.
