@@ -46,8 +46,9 @@ how a human would do so. Loops are converted to recursive functions, and your
 code is modified in such a way that a return won't just drop you in the next
 part of the promise chain, but actually does what you expect it to do.
 
-For more examples, see the test/integration directory for both the input and
-output **Kneden** gives.
+For more examples, see the
+[test/fixtures directory](https://github.com/marten-de-vries/kneden/tree/master/test/fixtures)
+for both the input and output **Kneden** takes/produces.
 
 ## Installation
 
