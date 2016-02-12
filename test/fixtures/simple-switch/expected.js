@@ -7,7 +7,7 @@ function test(n) {
     _match = false;
     _brokenOut = false;
 
-    if (!_brokenOut && (_match || _discriminant === 1)) {
+    if (!_brokenOut && (_match || 1 === _discriminant)) {
       a = 2;
       _brokenOut = true;
       _match = true;
@@ -16,7 +16,7 @@ function test(n) {
     return !_brokenOut && (_match || Promise.resolve().then(function () {
       return getNum();
     }).then(function (_resp) {
-      return _discriminant === _resp;
+      return _resp === _discriminant;
     }));
   }).then(function (_resp) {
     if (_resp) {

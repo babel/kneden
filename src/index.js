@@ -79,7 +79,6 @@ const MainVisitor = {
 
         // build the promise chain
         const chain = new PromiseChain(depth > 1, node.dirtyAllowed, respID, errID);
-        // TODO: hoist function declarations!
         chain.add(path.get('body.body'));
         newBody.push(returnStatement(chain.toAST()));
 

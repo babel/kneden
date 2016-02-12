@@ -226,6 +226,7 @@ describe('SyncAuthTests', function () {
     }).then(function (_resp) {
       error = _resp;
 
+
       error.status.should.equal(401);
       error.name.should.equal("unauthorized");
       error.message.should.contain("conflict");

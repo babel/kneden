@@ -2,10 +2,12 @@
 
 import {
   assignmentExpression,
+  arrayExpression,
   awaitExpression,
   binaryExpression,
   blockStatement,
   booleanLiteral,
+  callExpression,
   ensureBlock,
   expressionStatement,
   identifier,
@@ -13,6 +15,7 @@ import {
   isIfStatement,
   isReturnStatement,
   logicalExpression,
+  memberExpression,
   returnStatement,
   unaryExpression
 } from 'babel-types';
@@ -35,19 +38,46 @@ export const RefactorVisitor = extend({
       path.replaceWith(path.node.argument);
     }
   },
-  TryStatement(path) {
-    // changes a try/catch that contains an await in a promise chain that uses
-    // .catch()
-    if (containsAwait(path)) {
-      const subChain = new PromiseChain(true, true, this.respID, this.errID);
-      subChain.add(path.get('block.body'));
-      if(path.node.handler) {
-        subChain.addCatch(path.get('handler.body.body'), path.node.handler.param);
+  BinaryExpression(path) {
+    // a() + await b -> _temp = a(), _temp + await b - to make executing the first the
+    // first executed
+    if (containsAwait(path.get('right')) && !path.node.left.isTemp) {
+      const tmp = identifier(path.scope.generateUid('temp'));
+      tmp.isTemp = true;
+      this.addVarDecl(tmp);
+      const assignment = assignmentExpression('=', tmp, path.node.left);
+      path.node.left = tmp;
+      path.insertBefore(expressionStatement(assignment));
+    }
+  },
+  ArrayExpression(path) {
+    if (path.get('elements').slice(1).some(containsAwait)) {
+      const elements = path.node.elements.map(element => {
+        return wrapFunction(blockStatement([returnStatement(element)]));
+      });
+      const promiseAll = memberExpression(identifier('Promise'), identifier('all'));
+      path.replaceWith(callExpression(promiseAll, [arrayExpression(elements)]));
+    }
+  },
+  TryStatement: {
+    exit(path) {
+      // changes a try/catch that contains an await in a promise chain that uses
+      // .catch()
+      //
+      // uses exit() to make sure nested try/catch-es are converted correctly
+      // too.
+
+      if (containsAwait(path)) {
+        const subChain = new PromiseChain(true, true, this.respID, this.errID);
+        subChain.add(path.get('block.body'));
+        if(path.node.handler) {
+          subChain.addCatch(path.get('handler.body.body'), path.node.handler.param);
+        }
+        if (path.node.finalizer) {
+          subChain.addFinally(path.get('finalizer.body'));
+        }
+        path.replaceWith(awaitStatement(subChain.toAST()));
       }
-      if (path.node.finalizer) {
-        subChain.addFinally(path.get('finalizer.body'));
-      }
-      path.replaceWith(awaitStatement(subChain.toAST()));
     }
   },
   ConditionalExpression(path) {
@@ -187,7 +217,10 @@ export const RefactorVisitor = extend({
         return;
       }
 
-      const isOwnMatch = binaryExpression('===', discrID, caseNode.test);
+      // Seems like a weird order? Maybe, but it does prevent the
+      // BinaryExpression refactorer to make too much of a mess for the sake of
+      // strict execution order correctness.
+      const isOwnMatch = binaryExpression('===', caseNode.test, discrID);
       const isMatch = logicalExpression('||', matchID, isOwnMatch);
       const test = logicalExpression('&&', notBroken, isMatch);
       const matchAssign = assignmentExpression('=', matchID, booleanLiteral(true));

@@ -110,7 +110,8 @@ export default class PromiseChain {
   toAST() {
     this._cleanup();
 
-    if (this._inner && this._ast.callee.object.callee.object.name === 'Promise') {
+    const callee = this._ast.callee.object.callee;
+    if (this._inner && callee && callee.object.name === 'Promise') {
       // only one handler to the promise - because we're in an inner function
       // there's no reason to wrap the handler in promise code. Convenienly,
       // such a handler is inlineable later on.

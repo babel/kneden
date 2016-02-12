@@ -197,6 +197,8 @@ const BreakContinueReplacementVisitor = extend({
   //Loop(path) {
   //  path.skip();
   //}
+  // Will need to take into account the interrelatedness between functions
+  // though (through labeledsystems). So quite a few checks are necessary.
 }, NoSubFunctionsVisitor);
 
 const getLabel = (path, functionID) => path.node.label || functionID;

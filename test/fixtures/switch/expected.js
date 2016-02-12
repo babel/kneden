@@ -6,7 +6,7 @@ function test() {
     _match = false;
     _brokenOut = false;
 
-    if (!_brokenOut && (_match || _discriminant === 2)) {
+    if (!_brokenOut && (_match || 2 === _discriminant)) {
       return Promise.resolve().then(function () {
         return b();
       }).then(function () {
@@ -15,17 +15,17 @@ function test() {
       });
     }
   }).then(function () {
-    if (!_brokenOut && (_match || _discriminant === 3)) {
+    if (!_brokenOut && (_match || 3 === _discriminant)) {
       _match = true;
     }
 
-    if (!_brokenOut && (_match || _discriminant === 4)) {
+    if (!_brokenOut && (_match || 4 === _discriminant)) {
       console.log(4);
       _brokenOut = true;
       _match = true;
     }
 
-    if (!_brokenOut && (_match || _discriminant === 5)) {
+    if (!_brokenOut && (_match || 5 === _discriminant)) {
       return Promise.resolve().then(function () {
         return d();
       }).then(function () {

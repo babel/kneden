@@ -21,6 +21,7 @@ function test() {
   }).then(function (_resp) {
     e = _resp;
 
+
     return a + b + c + d + e + 2;
   });
 }
