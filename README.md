@@ -9,24 +9,25 @@ Kneden
 
 **WARNING: Kneden is alpha quality software.**
 
-Do you want an ES7 async/await transpiler that:
+Do you want an ES7 async/await transpiling [Babel](https://babeljs.io/) plugin, that:
 
 - produces readable code - even when generator functions are not available?
 - doesn't come with a runtime your users have to download?
 
 Then look no further! **Kneden** can help you.
 
-Example
--------
+## Example
 
-input:
+**In**
+
 ```js
 async function test() {
   await db.destroy();
 }
 ```
 
-output:
+**Out**
+
 ```js
 function test() {
   return Promise.resolve().then(function () {
@@ -36,7 +37,7 @@ function test() {
 }
 ```
 
-(The last ``.then()`` might seem superfluous at first, but the first function
+(The last .then() might seem superfluous at first, but the first function
 doesn't actually resolve to anything so it's necessary to make a valid
 translation.)
 
@@ -48,42 +49,51 @@ part of the promise chain, but actually does what you expect it to do.
 For more examples, see the test/integration directory for both the input and
 output **Kneden** gives.
 
-CLI
----
+## Installation
 
-```bash
-marten@procyon:~$ echo "async function test() {}" | ./bin/kneden
-function test() {
-  return Promise.resolve();
+```sh
+$ npm install kneden
+```
+
+## Usage
+
+### Via `.babelrc` (Recommended)
+
+**.babelrc**
+
+```json
+{
+  "plugins": ["kneden"]
 }
-marten@procyon:~$
 ```
 
-API
----
+### Via CLI
 
-```js
-var compile = require('kneden');
-var resp = compile('async function test() {}');
-console.log(resp); // function test() {return Promise.resolve(); }
+```sh
+$ babel --plugins kneden script.js
 ```
+
+### Via Node API
+
+```javascript
+require("babel-core").transform("code", {
+  plugins: ["kneden"]
+});
+```
+
+You can also use the plug-in in [Browserify](http://browserify.org/) using [babelify](https://github.com/babel/babelify), in [http://rollupjs.org/](Rollup)
+by using it in conjunction with
+[rollup-plugin-babel](https://github.com/rollup/rollup-plugin-babel), and in
+[Webpack](https://webpack.github.io/) by using it with
+[babel-loader](https://github.com/babel/babel-loader).
 
 Unsupported/TODO/Contributing
 -----------------------------
 
-- not written with ``eval()`` in mind. It's fine in synchronous code though, and
-  depending on how you use it might be fine otherwise too. The same is true for
-  the ``with`` statement.
-- no labeled statements within ``async`` functions. To support this, I'd need an
-  algorithm to refactor them into loops, if statements, recursive functions,
-  etc. Preferably something that makes the output somewhat comprehendable.
+- no ``eval()``; but that's true for other Babel plugins/presets as well.
+- Return statements aren't properly supported in loops, switch and try/catch/
+  finally statements yet (#13)
 - testing and bug fixing
-- integration with tools as [Browserify](http://browserify.org/),
-  [webpack](https://webpack.github.io/), [Babel](https://babeljs.io/),
-  [rollup.js](http://rollupjs.org/), etc.
-- whitespace and quite a few comments are lost during conversion. Maybe
-  migrating to something like [recast](https://github.com/benjamn/recast) would
-  help.
 
 Contributions welcome! Just open an issue or PR.
 
