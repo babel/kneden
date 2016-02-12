@@ -12,10 +12,13 @@ import {
   expressionStatement,
   identifier,
   ifStatement,
+  isExpressionStatement,
   isIfStatement,
   isReturnStatement,
   logicalExpression,
   memberExpression,
+  numericLiteral,
+  objectExpression,
   returnStatement,
   unaryExpression
 } from 'babel-types';
@@ -45,18 +48,65 @@ export const RefactorVisitor = extend({
       const tmp = identifier(path.scope.generateUid('temp'));
       tmp.isTemp = true;
       this.addVarDecl(tmp);
-      const assignment = assignmentExpression('=', tmp, path.node.left);
+      const assignment = assign(tmp, path.node.left);
       path.node.left = tmp;
-      path.insertBefore(expressionStatement(assignment));
+      insertBefore(path, assignment);
     }
   },
   ArrayExpression(path) {
+    // [a(), await b()]
+    //
+    // ->
+    //
+    // await Promise.all([
+    //   function () {return a();}(),
+    //   function () {return await b();}()
+    // ])
+    //
+    // (which is optimized away to:)
+    //
+    // await Promise.all([a(), b()])
+
     if (path.get('elements').slice(1).some(containsAwait)) {
       const elements = path.node.elements.map(element => {
         return wrapFunction(blockStatement([returnStatement(element)]));
       });
       const promiseAll = memberExpression(identifier('Promise'), identifier('all'));
-      path.replaceWith(callExpression(promiseAll, [arrayExpression(elements)]));
+      path.replaceWith(awaitExpression(callExpression(promiseAll, [arrayExpression(elements)])));
+    }
+  },
+  CallExpression(path) {
+    // call(a(), await b())
+    //
+    // ->
+    //
+    // _temp = [a(), await b()], call(_temp[0], _temp[1])
+    if (path.get('arguments').slice(1).some(containsAwait)) {
+      const tmp = identifier(path.scope.generateUid('temp'));
+      this.addVarDecl(tmp);
+      const assignment = assign(tmp, arrayExpression(path.node.arguments));
+      path.node.arguments = path.node.arguments.map((_, i) => {
+        return memberExpression(tmp, numericLiteral(i), true);
+      })
+      insertBefore(path, assignment);
+    }
+  },
+  ObjectExpression(path) {
+    // {a: a(), b: await b()}
+    //
+    // ->
+    //
+    // _temp = {}, _temp.a = a(), _temp.b = await b(), _temp
+    if (path.get('properties').slice(1).some(containsAwait)) {
+      const tmp = identifier(path.scope.generateUid('temp'));
+      this.addVarDecl(tmp);
+      const assignments = [assign(tmp, objectExpression([]))];
+      path.node.properties.forEach(property => {
+        const member = memberExpression(tmp, property.key);
+        assignments.push(assign(member, property.value));
+      });
+      path.replaceWith(tmp);
+      insertBefore(path, assignments);
     }
   },
   TryStatement: {
@@ -125,7 +175,7 @@ export const RefactorVisitor = extend({
 
       const testID = identifier(path.scope.generateUid('test'));
       this.addVarDecl(testID);
-      const block = [expressionStatement(assignmentExpression('=', testID, node.test))];
+      const block = [assign(testID, node.test)];
 
       let stillToAdd = [];
       const clearQueue = () => {
@@ -223,9 +273,8 @@ export const RefactorVisitor = extend({
       const isOwnMatch = binaryExpression('===', caseNode.test, discrID);
       const isMatch = logicalExpression('||', matchID, isOwnMatch);
       const test = logicalExpression('&&', notBroken, isMatch);
-      const matchAssign = assignmentExpression('=', matchID, booleanLiteral(true));
       stmts.push(ifStatement(test, blockStatement(caseNode.consequent.concat([
-        expressionStatement(matchAssign)
+        assign(matchID, booleanLiteral(true))
       ]))));
     });
 
@@ -243,9 +292,9 @@ export const RefactorVisitor = extend({
     }
 
     path.replaceWithMultiple([
-      expressionStatement(assignmentExpression('=', discrID, path.node.discriminant)),
-      expressionStatement(assignmentExpression('=', matchID, booleanLiteral(false))),
-      expressionStatement(assignmentExpression('=', brokenID, booleanLiteral(false)))
+      assign(discrID, path.node.discriminant),
+      assign(matchID, booleanLiteral(false)),
+      assign(brokenID, booleanLiteral(false))
     ].concat(stmts));
   },
   FunctionDeclaration(path) {
@@ -254,11 +303,22 @@ export const RefactorVisitor = extend({
   }
 }, NoSubFunctionsVisitor);
 
+const assign = (a, b) => expressionStatement(assignmentExpression('=', a, b));
+
+function insertBefore(path, node) {
+  // prevent unnecessary sequence expressions. In normal JS they might be
+  // elegant and thus nice for Babel, but their async wrapper is ugly.
+  if (isExpressionStatement(path.parent) || isReturnStatement(path.parent)) {
+    path.parentPath.insertBefore(node);
+  } else {
+    path.insertBefore(node);
+  }
+}
+
 const SwitchBreakReplacementVisitor = extend({
   BreakStatement(path) {
     // TODO: don't execute any code after the break assignment
-    const assignment = assignmentExpression('=', this.brokenID, booleanLiteral(true));
-    path.replaceWith(expressionStatement(assignment));
+    path.replaceWith(assign(this.brokenID, booleanLiteral(true)));
   }
   // TODO: don't touch sub switch statements. Enabling the following should be a
   // start.
