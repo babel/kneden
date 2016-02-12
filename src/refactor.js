@@ -42,8 +42,16 @@ export const RefactorVisitor = extend({
     }
   },
   BinaryExpression(path) {
-    // a() + await b -> _temp = a(), _temp + await b - to make executing the first the
-    // first executed
+    // a() + await b
+    //
+    // ->
+    //
+    // _temp = a(), _temp + await b
+    //
+    // to make sure the execution order is correct. This provides a nice trick:
+    // if you don't care about evaluation order and have one await-ed item in
+    // your binary expression, put it on the left side of the operator.
+
     if (containsAwait(path.get('right')) && !path.node.left.isTemp) {
       const tmp = identifier(path.scope.generateUid('temp'));
       tmp.isTemp = true;
@@ -81,6 +89,7 @@ export const RefactorVisitor = extend({
     // ->
     //
     // _temp = [a(), await b()], call(_temp[0], _temp[1])
+
     if (path.get('arguments').slice(1).some(containsAwait)) {
       const tmp = identifier(path.scope.generateUid('temp'));
       this.addVarDecl(tmp);
@@ -97,6 +106,7 @@ export const RefactorVisitor = extend({
     // ->
     //
     // _temp = {}, _temp.a = a(), _temp.b = await b(), _temp
+
     if (path.get('properties').slice(1).some(containsAwait)) {
       const tmp = identifier(path.scope.generateUid('temp'));
       this.addVarDecl(tmp);
@@ -218,6 +228,7 @@ export const RefactorVisitor = extend({
     //   await b;
     //   return await c;
     // }
+
     if (containsAwait(path)) {
       // don't include the last item yet
       const exprs = path.node.expressions;
