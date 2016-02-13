@@ -3,8 +3,9 @@ function test() {
   return Promise.resolve().then(function () {
     i = 0;
 
-    while (i < 10) {
+    test: while (i < 10) {
       i++;
+      continue test;
     }
   });
 }

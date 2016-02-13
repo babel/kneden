@@ -9,7 +9,7 @@ function trim(str) {
   return str.replace(/^\s+|\s+$/, '');
 }
 
-describe('Transpile ES7 async/await to vanilla ES6 Promise chains', function () {
+describe('Transpile ES7 async/await to vanilla ES6 Promise chains -', function () {
   // sometimes 2000 isn't enough when starting up in coverage mode.
   this.timeout(5000);
 

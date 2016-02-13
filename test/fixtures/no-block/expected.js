@@ -1,4 +1,14 @@
 function test() {
+  function _recursive() {
+    if (c()) {
+      return Promise.resolve().then(function () {
+        return d();
+      }).then(function () {
+        return _recursive();
+      });
+    }
+  }
+
   return Promise.resolve().then(function () {
     if (a()) {
       return b();
@@ -8,14 +18,6 @@ function test() {
       }
     }
   }).then(function () {
-    return function _recursive() {
-      if (c()) {
-        return Promise.resolve().then(function () {
-          return d();
-        }).then(function () {
-          return _recursive();
-        });
-      }
-    }();
+    return _recursive();
   }).then(function () {});
 }

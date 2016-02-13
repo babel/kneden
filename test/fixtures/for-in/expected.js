@@ -1,4 +1,15 @@
 function test(a) {
+  function _recursive() {
+    if (_items.length) {
+      return Promise.resolve().then(function () {
+        i = _items.pop();
+        return i;
+      }).then(function () {
+        return _recursive();
+      });
+    }
+  }
+
   var i;
   return Promise.resolve().then(function () {
     var _items = [];
@@ -9,15 +20,6 @@ function test(a) {
 
     _items.reverse();
 
-    return function _recursive() {
-      if (_items.length) {
-        return Promise.resolve().then(function () {
-          i = _items.pop();
-          return i;
-        }).then(function () {
-          return _recursive();
-        });
-      }
-    }();
+    return _recursive();
   }).then(function () {});
 }

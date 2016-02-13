@@ -6,7 +6,6 @@ import {
   expressionStatement,
   identifier,
   ifStatement,
-  isLabeledStatement,
   returnStatement,
   whileStatement
 } from 'babel-types';
@@ -17,10 +16,23 @@ import {
   awaitStatement,
   containsAwait,
   NoSubFunctionsVisitor,
+  matcher,
   wrapFunction
 } from './utils';
 
 export default {
+  LabeledStatement: {
+    // Babel seems to auto-remove labels from the AST if they don't make sense
+    // in a position. That makes it hard to keep track of if you're in a loop
+    // with label. So we move the label onto the node itself, and handle it
+    // manually (at least, if we're touching the loop, i.e. if it has an await
+    // somewhere inside).
+    enter(path) {
+      if (containsAwait(path)) {
+        path.node.body.loopLabel = path.node.label;
+      }
+    }
+  },
   DoWhileStatement(path) {
     // converts
     //
@@ -37,7 +49,7 @@ export default {
     //   }
     // }()
 
-    refactorLoop(path, false, functionID => {
+    refactorLoop(path, false, this.addVarDecl, functionID => {
       const continueBlock = blockStatement([continueStatementEquiv(functionID)])
       path.node.body.body.push(ifStatement(path.node.test, continueBlock));
       path.replaceWith(recursiveWrapFunction(functionID, path.node.body));
@@ -59,7 +71,7 @@ export default {
     //   }
     // }()
 
-    refactorLoop(path, false, functionID => {
+    refactorLoop(path, false, this.addVarDecl, functionID => {
       path.node.body.body.push(continueStatementEquiv(functionID));
       const body = blockStatement([ifStatement(path.node.test, path.node.body)]);
 
@@ -145,39 +157,78 @@ function recursiveWrapFunction(functionID, body) {
   return awaitStatement(func);
 }
 
+function insideAwaitContainingLabel(path) {
+  do {
+    if (path.node.loopLabel) {
+      return true;
+    }
+  } while ((path = path.parentPath));
+  return false;
+}
+
 function ifShouldRefactorLoop(path, extraCheck, handler) {
   ensureBlock(path.node);
-  if (extraCheck || containsAwait(path.get('body'))) {
+  if (extraCheck || insideAwaitContainingLabel(path) || loopContainsAwait(path.get('body'))) {
     handler();
   }
 }
 
-function refactorLoop(path, extraCheck, handler) {
-  // TODO: if containing a return *or* a break statement that doesn't control
-  // the own loop (references a label of another loop), add:
-  //
-  // .then(function (_resp) {
-  //   if (_resp !== _recursive) {
-  //   return _resp;
-  // });
-  //
-  // TODO: make sure that recursive style labels & 'normal' labels aren't mixed
+const NoSubLoopsVisitor = {
+  Loop(path) {
+    path.skip();
+  }
+};
+
+const loopContainsAwait = matcher(
+  ['AwaitExpression'],
+  extend({}, NoSubFunctionsVisitor, NoSubLoopsVisitor)
+);
+
+const loopReturnHandler = template(`
+  TMP = BASE
+  if (_temp !== FUNC) {
+    return _temp;
+  }
+`)
+
+function refactorLoop(path, extraCheck, addVarDecl, handler) {
   ifShouldRefactorLoop(path, extraCheck, () => {
-    let functionID;
-    if (isLabeledStatement(path.parent)) {
-      functionID = path.parent.label;
-    } else {
-      functionID = identifier(path.scope.generateUid('recursive'));
-    }
-    path.get('body').traverse(BreakContinueReplacementVisitor, {functionID});
+    const label = path.node.loopLabel;
+    const functionID = label || identifier(path.scope.generateUid('recursive'));
+    const info = {functionID};
+    path.get('body').traverse(BreakContinueReplacementVisitor, info);
     handler(functionID);
+
+    // if containing a return *or* a break statement that doesn't control the
+    // own loop (references a label of another loop), add:
+    //
+    // .then(function (_resp) {
+    //   _temp = _resp;
+    //   if (_temp !== _recursive) {
+    //     return _temp;
+    //   }
+    // });
+    if (info.addReturnHandler) {
+      var tmp = identifier(path.scope.generateUid('temp'));
+      addVarDecl(tmp);
+      path.node.loopLabel = label;
+      path.replaceWithMultiple(loopReturnHandler({TMP: tmp, BASE: path.node, FUNC: functionID}));
+    }
   });
 }
 
-const continueStatementEquiv =
-  funcID => returnStatement(awaitExpression(callExpression(funcID, [])));
+const continueStatementEquiv = funcID => {
+  const stmt = returnStatement(awaitExpression(callExpression(funcID, [])))
+  stmt.noHandlerRequired = true;
+  return stmt;
+};
 
 const BreakContinueReplacementVisitor = extend({
+  ReturnStatement(path) {
+    if (!path.node.noHandlerRequired && path.node.argument) {
+      this.addReturnHandler = true;
+    }
+  },
   // replace continue/break with their recursive equivalents
   BreakStatement(path) {
     // a break statement is replaced by returning the name of the loop function
@@ -186,19 +237,21 @@ const BreakContinueReplacementVisitor = extend({
     // So: break; becomes return _recursive;
     //
     // and break myLabel; becomes return myLabel;
-    path.replaceWith(returnStatement(getLabel(path, this.functionID)));
+
+    const label = getLabel(path, this.functionID);
+
+    if (label !== this.functionID) {
+      this.addReturnHandler = true;
+    }
+    const returnStmt = returnStatement(getLabel(path, this.functionID));
+    returnStmt.noHandlerRequired = true;
+    path.replaceWith(returnStmt);
   },
   ContinueStatement(path) {
     // see break, with the difference that the function is called (and thus)
     // executed next
     path.replaceWith(continueStatementEquiv(getLabel(path, this.functionID)));
   }
-  // TODO: don't touch subloops - maybe something like:
-  //Loop(path) {
-  //  path.skip();
-  //}
-  // Will need to take into account the interrelatedness between functions
-  // though (through labeledsystems). So quite a few checks are necessary.
-}, NoSubFunctionsVisitor);
+}, NoSubFunctionsVisitor, NoSubLoopsVisitor);
 
 const getLabel = (path, functionID) => path.node.label || functionID;

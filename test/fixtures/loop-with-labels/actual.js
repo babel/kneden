@@ -1,3 +1,7 @@
+function a() {
+  console.log('test');
+}
+
 async function test() {
   var i, j;
   i = 0;

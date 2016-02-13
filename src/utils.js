@@ -12,10 +12,10 @@ export const NoSubFunctionsVisitor = {
   }
 }
 
-export const containsAwait = matcher(['AwaitExpression']);
+export const containsAwait = matcher(['AwaitExpression'], NoSubFunctionsVisitor);
 
-export function matcher(types) {
-  const MatchVisitor = extend({}, NoSubFunctionsVisitor);
+export function matcher(types, base) {
+  const MatchVisitor = extend({}, base);
   types.forEach(type => {
     MatchVisitor[type] = function (path) {
       this.match.found = true;

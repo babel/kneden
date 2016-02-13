@@ -311,8 +311,15 @@ export const RefactorVisitor = extend({
   FunctionDeclaration(path) {
     this.addFunctionDecl(path.node);
     path.remove();
+  },
+  FunctionExpression(path) {
+    if (path.node.id) {
+      path.node.type = 'FunctionDeclaration';
+      this.addFunctionDecl(path.node)
+      path.replaceWith(path.node.id);
+    }
   }
-}, NoSubFunctionsVisitor);
+}, PartialLoopRefactorVisitor, NoSubFunctionsVisitor);
 
 const assign = (a, b) => expressionStatement(assignmentExpression('=', a, b));
 
@@ -341,7 +348,7 @@ const SwitchBreakReplacementVisitor = extend({
 const wrapIfBranch =
   branch => blockStatement([returnStatement(wrapFunction(branch))]);
 
-const containsReturnOrAwait = matcher(['ReturnStatement', 'AwaitExpression']);
+const containsReturnOrAwait = matcher(['ReturnStatement', 'AwaitExpression'], NoSubFunctionsVisitor);
 
 function extendElse(ifStmt, extraBody) {
   const body = ((ifStmt.alternate || {}).body || []).concat(extraBody);
@@ -418,4 +425,4 @@ export const IfRefactorVisitor = extend({
       extendElse(subNode, remainder);
     }
   }
-}, PartialLoopRefactorVisitor, NoSubFunctionsVisitor)
+}, NoSubFunctionsVisitor)
