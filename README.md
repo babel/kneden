@@ -7,7 +7,9 @@ Kneden
 
 > Transpile ES7 async/await to vanilla ES6 Promise chains
 
-**WARNING: Kneden is alpha quality software.**
+**WARNING: Kneden
+[is usable](https://github.com/pouchdb/pouchdb-plugin-helper/pull/9), but it's
+also [not complete yet](https://github.com/marten-de-vries/kneden/issues/13).**
 
 Do you want an ES7 async/await transpiling [Babel](https://babeljs.io/) plugin,
 that:
@@ -33,8 +35,7 @@ async function test() {
 function test() {
   return Promise.resolve().then(function () {
     return db.destroy();
-  }).then(function () {
-  });
+  }).then(function () {});
 }
 ```
 
@@ -90,13 +91,16 @@ by using it in conjunction with
 [Webpack](https://webpack.github.io/) using
 [babel-loader](https://github.com/babel/babel-loader).
 
-Unsupported/TODO/Contributing
------------------------------
+Unsupported
+-----------
 
+- Return statements aren't properly supported in switch and try/catch/finally
+  statements yet ([#13](https://github.com/marten-de-vries/kneden/issues/13))
 - no ``eval()``; but that's true for other Babel plugins/presets as well.
-- Return statements aren't properly supported in loops, switch and try/catch/
-  finally statements yet
-  ([#13](https://github.com/marten-de-vries/kneden/issues/13))
+
+TODO/Contributing
+-----------------
+
 - testing and bug fixing
 
 Contributions welcome! Just open an issue or PR.
