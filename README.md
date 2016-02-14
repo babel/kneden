@@ -60,6 +60,12 @@ $ npm install kneden
 
 ## Usage
 
+Note: Kneden only supports transpiling ES5 with the addition of async/await. If
+you're using other ES6 features (like arrow functions, let/const, classes,
+etc.), make sure you transpile them down to valid ES5 code first using the
+[babel es2015 preset](https://www.npmjs.com/package/babel-preset-es2015). See
+[#19](https://github.com/marten-de-vries/kneden/issues/19) for more information.
+
 ### Via `.babelrc` (Recommended)
 
 **.babelrc**
