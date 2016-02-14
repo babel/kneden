@@ -158,16 +158,22 @@ function recursiveWrapFunction(functionID, body) {
 }
 
 function insideAwaitContainingLabel(path) {
+  // walks the path tree to check if inside a label that also contains an await
+  // statement. (See also the LabeledStatement visitor.)
   do {
     if (path.node.loopLabel) {
       return true;
     }
   } while ((path = path.parentPath));
+
+  // no such label found
   return false;
 }
 
 function ifShouldRefactorLoop(path, extraCheck, handler) {
+  // ensureBlock here is convenient, but has nothing to do with the method name
   ensureBlock(path.node);
+
   if (extraCheck || insideAwaitContainingLabel(path) || loopContainsAwait(path.get('body'))) {
     handler();
   }
@@ -179,24 +185,21 @@ const NoSubLoopsVisitor = {
   }
 };
 
+// does the current loop (no subloops) contain an await statement?
 const loopContainsAwait = matcher(
   ['AwaitExpression'],
   extend({}, NoSubFunctionsVisitor, NoSubLoopsVisitor)
 );
 
-const loopReturnHandler = template(`
-  TMP = BASE
-  if (_temp !== FUNC) {
-    return _temp;
-  }
-`)
-
 function refactorLoop(path, extraCheck, addVarDecl, handler) {
   ifShouldRefactorLoop(path, extraCheck, () => {
+    // gather info about the function & fix up its body (break + continue
+    // statements)
     const label = path.node.loopLabel;
     const functionID = label || identifier(path.scope.generateUid('recursive'));
     const info = {functionID};
     path.get('body').traverse(BreakContinueReplacementVisitor, info);
+    // actual conversion
     handler(functionID);
 
     // if containing a return *or* a break statement that doesn't control the
@@ -217,8 +220,17 @@ function refactorLoop(path, extraCheck, addVarDecl, handler) {
   });
 }
 
+const loopReturnHandler = template(`
+  TMP = BASE
+  if (_temp !== FUNC) {
+    return _temp;
+  }
+`);
+
 const continueStatementEquiv = funcID => {
+  // continue label; -> return await label();
   const stmt = returnStatement(awaitExpression(callExpression(funcID, [])))
+  // not a 'real' return
   stmt.noHandlerRequired = true;
   return stmt;
 };
@@ -226,6 +238,8 @@ const continueStatementEquiv = funcID => {
 const BreakContinueReplacementVisitor = extend({
   ReturnStatement(path) {
     if (!path.node.noHandlerRequired && path.node.argument) {
+      // if a return statement added by the user - and actually returning
+      // something, we need to add a return handler later.
       this.addReturnHandler = true;
     }
   },
@@ -240,11 +254,11 @@ const BreakContinueReplacementVisitor = extend({
 
     const label = getLabel(path, this.functionID);
 
-    if (label !== this.functionID) {
-      this.addReturnHandler = true;
-    }
     const returnStmt = returnStatement(getLabel(path, this.functionID));
-    returnStmt.noHandlerRequired = true;
+    if (label === this.functionID) {
+      // only if this controls the current loop, a return handler is unnecessary
+      returnStmt.noHandlerRequired = true;
+    }
     path.replaceWith(returnStmt);
   },
   ContinueStatement(path) {

@@ -1,4 +1,5 @@
 import {
+  assignmentExpression,
   awaitExpression,
   callExpression,
   expressionStatement,
@@ -42,3 +43,6 @@ export function wrapFunction(body) {
 }
 
 export const awaitStatement = arg => expressionStatement(awaitExpression(arg));
+
+export const assign = (a, b) =>
+  expressionStatement(assignmentExpression('=', a, b));
