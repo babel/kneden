@@ -102,12 +102,13 @@ Unsupported
 
 - Return statements aren't properly supported in switch and try/catch/finally
   statements yet ([#13](https://github.com/marten-de-vries/kneden/issues/13))
-- no ``eval()``; but that's true for other Babel plugins/presets as well.
+- No ``eval()``; but that's true for other Babel plugins/presets as well.
 
-TODO/Contributing
------------------
+Contributing
+------------
 
-- testing and bug fixing
+- Reporting test results with your code base
+- [Support removing items while iterating for ForInStatement - #18](https://github.com/marten-de-vries/kneden/issues/18)
 
 Contributions welcome! Just open an issue or PR.
 
