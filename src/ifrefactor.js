@@ -84,25 +84,28 @@ export const FirstPassIfVisitor = {
 const containsReturnOrAwait = matcher(['ReturnStatement', 'AwaitExpression'], NoSubFunctionsVisitor);
 
 export const SecondPassIfVisitor = extend({
-  IfStatement(path) {
-    const alt = path.node.alternate;
-    if (!path.node.consequent.body.length && alt && alt.body.length) {
-      path.node.consequent = path.node.alternate;
-      path.node.alternate = null;
-      path.node.test = unaryExpression('!', path.node.test);
-    }
-    const ifContainsAwait = containsAwait(path.get('consequent'));
-    const elseContainsAwait = containsAwait(path.get('alternate'));
+  IfStatement: {
+    exit(path) {
+      const alt = path.node.alternate;
+      if (!path.node.consequent.body.length && alt && alt.body.length) {
+        path.node.consequent = path.node.alternate;
+        path.node.alternate = null;
+        path.node.test = unaryExpression('!', path.node.test);
+      }
+      const ifContainsAwait = containsAwait(path.get('consequent'));
+      const elseContainsAwait = containsAwait(path.get('alternate'));
 
-    const {node} = path;
-    if (ifContainsAwait) {
-      node.consequent = wrapIfBranch(node.consequent);
-    }
-    if (elseContainsAwait) {
-      node.alternate = wrapIfBranch(node.alternate);
-    }
-    if (ifContainsAwait || elseContainsAwait) {
-      path.replaceWith(awaitExpression(wrapFunction(blockStatement([node]))));
+      const {node} = path;
+      const parentDirtyAllowed = path.parentPath.parent.dirtyAllowed;
+      if (ifContainsAwait) {
+        node.consequent = wrapIfBranch(node.consequent, parentDirtyAllowed);
+      }
+      if (elseContainsAwait) {
+        node.alternate = wrapIfBranch(node.alternate, parentDirtyAllowed);
+      }
+      if (ifContainsAwait || elseContainsAwait) {
+        path.replaceWith(awaitExpression(wrapFunction(blockStatement([node]))));
+      }
     }
   },
   BlockStatement(path) {
@@ -146,12 +149,15 @@ export const SecondPassIfVisitor = extend({
         subNode.consequent.body.splice(-1);
       }
       extendElse(subNode, remainder);
+      path.parent.dirtyAllowed = true;
     }
   }
 }, NoSubFunctionsVisitor)
 
-const wrapIfBranch =
-  branch => blockStatement([returnStatement(wrapFunction(branch))]);
+function wrapIfBranch(branch, parentDirtyAllowed) {
+  const dirtyAllowed = !parentDirtyAllowed || isReturnStatement(branch.body[branch.body.length - 1]);
+  return blockStatement([returnStatement(wrapFunction(branch, dirtyAllowed))]);
+}
 
 function extendElse(ifStmt, extraBody) {
   const body = ((ifStmt.alternate || {}).body || []).concat(extraBody);
