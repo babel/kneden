@@ -127,8 +127,10 @@ export default {
     // }
 
     ifShouldRefactorLoop(path, false, () => {
+      var ITEMS = identifier(path.scope.generateUid('items'));
+      this.addVarDecl(ITEMS);
       path.replaceWithMultiple(forInEquiv({
-        ITEMS: identifier(path.scope.generateUid('items')),
+        ITEMS,
         ITEM: identifier(path.scope.generateUid('item')),
         LEFT: path.node.left,
         RIGHT: path.node.right,
@@ -139,7 +141,7 @@ export default {
 };
 
 const forInEquiv = template(`
-  var ITEMS = [];
+  ITEMS = [];
   for (var ITEM in RIGHT) {
     ITEMS.push(ITEM);
   }

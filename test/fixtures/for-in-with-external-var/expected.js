@@ -10,9 +10,10 @@ function test(a) {
     }
   }
 
-  var i;
+  var i, _items;
+
   return Promise.resolve().then(function () {
-    var _items = [];
+    _items = [];
 
     for (var _item in a) {
       _items.push(_item);
