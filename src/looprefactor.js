@@ -127,11 +127,13 @@ export default {
     // }
 
     ifShouldRefactorLoop(path, false, () => {
-      var ITEMS = identifier(path.scope.generateUid('items'));
-      this.addVarDecl(ITEMS);
+      var KEYS = identifier(path.scope.generateUid('keys'));
+      var OBJECT = identifier(path.scope.generateUid('object'));
+      this.addVarDecl(KEYS);
+      this.addVarDecl(OBJECT);
       path.replaceWithMultiple(forInEquiv({
-        ITEMS,
-        ITEM: identifier(path.scope.generateUid('item')),
+        KEYS, OBJECT,
+        KEY: identifier(path.scope.generateUid('key')),
         LEFT: path.node.left,
         RIGHT: path.node.right,
         BODY: path.node.body
@@ -141,14 +143,17 @@ export default {
 };
 
 const forInEquiv = template(`
-  ITEMS = [];
-  for (var ITEM in RIGHT) {
-    ITEMS.push(ITEM);
+  OBJECT = RIGHT;
+  KEYS = [];
+  for (var KEY in OBJECT) {
+    KEYS.push(KEY);
   }
-  ITEMS.reverse();
-  while(ITEMS.length) {
-    LEFT = ITEMS.pop();
-    BODY;
+  KEYS.reverse();
+  while(KEYS.length) {
+    LEFT = KEYS.pop();
+    if (LEFT in OBJECT) {
+      BODY;
+    }
   }
 `);
 

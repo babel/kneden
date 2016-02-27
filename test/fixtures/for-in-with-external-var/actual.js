@@ -1,6 +1,6 @@
-async function test(a) {
-  var i;
-  for (i in a) {
-    await i;
+async function test(object) {
+  var key;
+  for (key in object) {
+    await key;
   }
 }

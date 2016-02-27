@@ -1,25 +1,37 @@
-function test(a) {
+function test(object) {
   function _recursive() {
-    if (_items.length) {
-      return Promise.resolve().then(function () {
-        i = _items.pop();
-        return i;
-      }).then(function () {
+    var _test;
+
+    return Promise.resolve().then(function () {
+      _test = _keys.length;
+
+      if (_test) {
+        key = _keys.pop();
+      }
+
+      if (_test && key in _object) {
+        return Promise.resolve().then(function () {
+          return key;
+        }).then(function () {});
+      }
+    }).then(function () {
+      if (_test) {
         return _recursive();
-      });
-    }
+      }
+    });
   }
 
-  var i, _items;
+  var key, _keys, _object;
 
   return Promise.resolve().then(function () {
-    _items = [];
+    _object = object;
+    _keys = [];
 
-    for (var _item in a) {
-      _items.push(_item);
+    for (var _key in _object) {
+      _keys.push(_key);
     }
 
-    _items.reverse();
+    _keys.reverse();
 
     return _recursive();
   }).then(function () {});
