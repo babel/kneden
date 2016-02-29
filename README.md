@@ -43,7 +43,7 @@ function test() {
 doesn't actually resolve to anything so it's necessary to make a valid
 translation.)
 
-**Kneden** tries to translate ES6 async/await to promises in a manner similar to
+**Kneden** tries to translate ES7 async/await to promises in a manner similar to
 how a human would do so. Loops are converted to recursive functions, and your
 code is modified in such a way that a return won't just drop you in the next
 part of the promise chain, but actually does what you expect it to do.
