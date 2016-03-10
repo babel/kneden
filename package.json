@@ -42,7 +42,7 @@
   "dependencies": {
     "babel-helper-hoist-variables": "^6.5.0",
     "babel-template": "^6.3.13",
-    "babel-types": "^6.5.2",
+    "babel-types": "^6.7.2",
     "js-extend": "^1.0.1"
   },
   "license": "ISC"
