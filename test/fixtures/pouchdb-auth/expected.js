@@ -8,7 +8,7 @@ var _extend2 = _interopRequireDefault(_extend);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-var db = undefined;
+var db = void 0;
 
 function shouldBeAdminParty(session) {
   session.info.should.eql({
