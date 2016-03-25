@@ -1,5 +1,5 @@
-Kneden
-======
+Kneden (babel-plugin-async-to-promises)
+=======================================
 
 [![Build Status](https://travis-ci.org/marten-de-vries/kneden.svg?branch=master)](https://travis-ci.org/marten-de-vries/kneden)
 [![Dependency Status](https://david-dm.org/marten-de-vries/kneden.svg)](https://david-dm.org/marten-de-vries/kneden)
@@ -17,7 +17,7 @@ that:
 - produces readable code - even when generator functions are not available?
 - doesn't come with a runtime your users have to download?
 
-Then look no further! **Kneden** can help you.
+Then look no further! **Kneden (babel-plugin-async-to-promises)** can help you.
 
 ## Example
 
@@ -55,7 +55,7 @@ for both the input and output **Kneden** takes/produces.
 ## Installation
 
 ```sh
-$ npm install kneden
+$ npm install babel-plugin-async-to-promises
 ```
 
 ## Usage
@@ -72,21 +72,21 @@ etc.), make sure you transpile them down to valid ES5 code first using the
 
 ```json
 {
-  "plugins": ["kneden"]
+  "plugins": ["async-to-promises"]
 }
 ```
 
 ### Via CLI
 
 ```sh
-$ babel --plugins kneden script.js
+$ babel --plugins async-to-promises script.js
 ```
 
 ### Via Node API
 
 ```javascript
 require("babel-core").transform("code", {
-  plugins: ["kneden"]
+  plugins: ["async-to-promises"]
 });
 ```
 
@@ -107,16 +107,21 @@ Unsupported
 Contributing
 ------------
 
-- Reporting test results with your code base
-- [Support removing items while iterating for ForInStatement - #18](https://github.com/marten-de-vries/kneden/issues/18)
+There are a couple of ways to contribute, for example by:
 
-Contributions welcome! Just open an issue or PR.
+- Reporting test results with your code base
+- Fixing bugs, for a nice starting task see the ones labeled '[good first bug](https://github.com/marten-de-vries/kneden/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+bug%22)'.
+
+Contributions are very welcome! Just open an issue or PR.
 
 What's up with the name?
 ------------------------
 
 It's Dutch for 'to knead'/'to mold' - the program molds ES7 async/await
 constructs into promises. It seemed applicable. [Pronounciation](https://upload.wikimedia.org/wikipedia/commons/0/0e/Nl-kneden.ogg).
+
+The npm package name is a more descriptive one as explained in
+[issue #22](https://github.com/marten-de-vries/kneden/issues/22).
 
 License
 -------

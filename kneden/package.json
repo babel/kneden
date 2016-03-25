@@ -1,0 +1,26 @@
+{
+  "name": "kneden",
+  "version": "1.0.4",
+  "description": " Transpile ES7 async/await to vanilla ES6 Promise chains",
+  "repository": "marten-de-vries/kneden",
+  "author": "Marten de Vries",
+  "main": "index.js",
+  "keywords": [
+    "es",
+    "7",
+    "6",
+    "babel",
+    "promise",
+    "async",
+    "await",
+    "promises",
+    "function",
+    "functions",
+    "plugin",
+    "babel-plugin"
+  ],
+  "dependencies": {
+    "babel-plugin-async-to-promises": "1.0.4"
+  },
+  "license": "ISC"
+}
