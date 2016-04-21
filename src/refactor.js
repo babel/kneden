@@ -254,7 +254,7 @@ export const RefactorVisitor = extend({
     path.remove();
   },
   FunctionExpression(path) {
-    if (path.node.id) {
+    if (path.node.id && path.parent.type !== 'ObjectProperty') {
       path.node.type = 'FunctionDeclaration';
       this.addFunctionDecl(path.node)
       path.replaceWith(path.node.id);
