@@ -1,6 +1,8 @@
 Kneden (babel-plugin-async-to-promises)
 =======================================
 
+**This project is currently unmaintained. If you want to take over, feel free to fork the repo. If such a fork gets maintained or contains useful improvements, I'd be willing to merge back and give repo+npm access.**
+
 [![Build Status](https://travis-ci.org/marten-de-vries/kneden.svg?branch=master)](https://travis-ci.org/marten-de-vries/kneden)
 [![Dependency Status](https://david-dm.org/marten-de-vries/kneden.svg)](https://david-dm.org/marten-de-vries/kneden)
 [![devDependency Status](https://david-dm.org/marten-de-vries/kneden/dev-status.svg)](https://david-dm.org/marten-de-vries/kneden#info=devDependencies)
