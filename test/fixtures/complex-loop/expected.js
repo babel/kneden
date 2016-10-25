@@ -18,18 +18,22 @@ function test() {
       if (_resp) {
         return _recursive();
       } else {
-        if (_test && i === 2) {
-          return _recursive;
-        } else {
-          if (_test) {
+        return Promise.resolve().then(function () {
+          if (_test && i === 2) {
+            return _recursive;
+          } else {
             return Promise.resolve().then(function () {
-              return db.destroy();
-            }).then(function (_resp) {
-              a = _resp;
-              return _recursive();
-            });
+              if (_test) {
+                return Promise.resolve().then(function () {
+                  return db.destroy();
+                }).then(function (_resp) {
+                  a = _resp;
+                  return _recursive();
+                });
+              }
+            }).then(function () {});
           }
-        }
+        }).then(function () {});
       }
     });
   }

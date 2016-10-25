@@ -13,7 +13,9 @@ function test() {
         _test2 = _resp;
 
         if (_test2) {
-          return e();
+          return Promise.resolve().then(function () {
+            return e();
+          }).then(function () {});
         }
       }).then(function () {
         if (_test2 && f()) {
@@ -31,5 +33,5 @@ function test() {
         }
       });
     }
-  }).then(function () {});
+  });
 }

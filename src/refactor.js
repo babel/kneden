@@ -65,8 +65,8 @@ export const RefactorVisitor = extend({
     // ->
     //
     // await Promise.all([
-    //   function () {return a();}(),
-    //   function () {return await b();}()
+    //   async function () {return a();}(),
+    //   async function () {return await b();}()
     // ])
     //
     // (which is optimized away to:)

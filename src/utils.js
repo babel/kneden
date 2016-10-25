@@ -36,9 +36,9 @@ export function matcher(types, base) {
   }
 }
 
-export function wrapFunction(body) {
+export function wrapFunction(body, dirtyAllowed) {
   const func = functionExpression(null, [], body, false, true);
-  func.dirtyAllowed = true;
+  func.dirtyAllowed = dirtyAllowed;
   return callExpression(func, []);
 }
 
