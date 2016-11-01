@@ -1,8 +1,7 @@
 language: node_js
 
 node_js:
-  - "0.10"
-  - "stable"
+  - stable
 
 script:
   - npm run $COMMAND
